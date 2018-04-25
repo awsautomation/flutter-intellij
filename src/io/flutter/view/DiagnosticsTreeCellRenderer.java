@@ -53,9 +53,9 @@ class DiagnosticsTreeCellRenderer extends InspectorColoredTreeCellRenderer {
   // The main problem is in the regular scheme, selected but not focused
   // nodes are grey which makes the correlation between the selection in
   // the two views less obvious.
-  final JBColor HIGHLIGHT_COLOR = new JBColor(new Color(202, 191, 69), new Color(99, 101, 103));
-  final JBColor SHOW_MATCH_COLOR = new JBColor(new Color(225, 225, 0), new Color(90, 93, 96));
-  final JBColor LINKED_COLOR = new JBColor(new Color(255, 255, 220), new Color(70, 73, 76));
+  static final JBColor HIGHLIGHT_COLOR = new JBColor(new Color(202, 191, 69), new Color(99, 101, 103));
+  static final JBColor SHOW_MATCH_COLOR = new JBColor(new Color(225, 225, 0), new Color(90, 93, 96));
+  static final JBColor LINKED_COLOR = new JBColor(new Color(255, 255, 180), new Color(70, 73, 76));
 
   public DiagnosticsTreeCellRenderer(InspectorPanel panel) {
     this.panel = panel;
@@ -77,7 +77,8 @@ class DiagnosticsTreeCellRenderer extends InspectorColoredTreeCellRenderer {
     setIconOpaque(false);
     setTransparentIconBackground(true);
 
-    final Object userObject = ((DefaultMutableTreeNode)value).getUserObject();
+    final DefaultMutableTreeNode treeNode = (DefaultMutableTreeNode)value;
+    final Object userObject = treeNode.getUserObject();
     if (userObject instanceof String) {
       appendText((String)userObject, SimpleTextAttributes.GRAYED_ATTRIBUTES);
       return;
@@ -90,14 +91,7 @@ class DiagnosticsTreeCellRenderer extends InspectorColoredTreeCellRenderer {
     // Highlight nodes that exist in both the details and summary tree to
     // show how the trees are linked together.
     if (!highlight && panel.isHighlightNodesShownInBothTrees()) {
-      if (panel.detailsSubtree && panel.isCreatedByLocalProject(node)) {
-        isLinkedChild = panel.parentTree.hasDiagnosticsValue(node.getValueRef());
-      }
-      else {
-        if (panel.subtreePanel != null) {
-          isLinkedChild = panel.subtreePanel.hasDiagnosticsValue(node.getValueRef());
-        }
-      }
+      isLinkedChild = panel.isVisibleOtherTree(treeNode);
     }
     if (highlight) {
       setOpaque(true);

@@ -84,7 +84,7 @@ public class TreeScrollAnimator implements Disposable {
   /**
    * Animation duration if we are only changing the X axis and not the Y axis.
    */
-  static final int DEFAULT_ANIMATE_X_DURATION = 80;
+  static final int DEFAULT_ANIMATE_X_DURATION = 150;
 
   private Point animationStart;
   private Point animationEnd;

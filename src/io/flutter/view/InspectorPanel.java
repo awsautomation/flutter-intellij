@@ -124,6 +124,7 @@ public class InspectorPanel extends JPanel implements Disposable, InspectorServi
   private boolean isActive = false;
   private Map<InspectorInstanceRef, DefaultMutableTreeNode> valueToTreeNode = new HashMap<>();
 
+  private Set<DefaultMutableTreeNode> visibleInOtherTree = new HashSet<DefaultMutableTreeNode>();
   /**
    * When visibleToUser is false we should dispose all allocated objects and
    * not perform any actions.
@@ -219,6 +220,9 @@ public class InspectorPanel extends JPanel implements Disposable, InspectorServi
     treeScrollPane = (JBScrollPane)ScrollPaneFactory.createScrollPane(myRootsTree);
     treeScrollPane.setAutoscrolls(false);
 
+    treeScrollPane.getViewport().addChangeListener((e) -> { recomputeVisibleOtherPane(true); });
+
+
     scrollAnimator = new TreeScrollAnimator(myRootsTree, treeScrollPane);
     shouldAutoHorizontalScroll.listen(scrollAnimator::setAutoHorizontalScroll, true);
     highlightNodesShownInBothTrees.listen(this::setHighlightNodesShownInBothTrees, true);
@@ -289,6 +293,55 @@ public class InspectorPanel extends JPanel implements Disposable, InspectorServi
         onIsolateStopped();
       }
     }, true);
+  }
+
+  private void recomputeVisibleOtherPane(boolean updateOtherPane) {
+    final InspectorPanel otherPanel = detailsSubtree ? parentTree : subtreePanel;
+    if (otherPanel == null) {
+      return;
+    }
+
+    final Point scrollPosition = treeScrollPane.getViewport().getViewPosition();
+    final int rowStart = myRootsTree.getClosestRowForLocation(scrollPosition.x, scrollPosition.y);
+    final int rowEnd = myRootsTree.getClosestRowForLocation(scrollPosition.x, scrollPosition.y + treeScrollPane.getHeight() - 1);
+
+    final Set<DefaultMutableTreeNode> visible = new HashSet<>();
+    // If there are no visible nodes we continue up the tree to the first
+    // visible so there is a set of paired nodes anchoring the selection.
+    for (int row = rowEnd; row >= rowStart || (row >= 0 && visible.isEmpty()); --row) {
+      final TreePath rowPath = myRootsTree.getPathForRow(row);
+      if (rowPath == null) {
+        continue;
+      }
+      final DiagnosticsNode node = TreeUtils.maybeGetDiagnostic((DefaultMutableTreeNode)rowPath.getLastPathComponent());
+      if (node != null) {
+        final DefaultMutableTreeNode treeNode = otherPanel.findTreeNodeValue(node.getValueRef());
+        if (treeNode!= null) {
+          visible.add(treeNode);
+        }
+      }
+    }
+
+    otherPanel.setVisibleOtherPane(visible);
+    if (updateOtherPane) {
+      otherPanel.recomputeVisibleOtherPane(false);
+    }
+
+    XXX NEED TO RECOMPUTE VISIBLE ANYTIME THE TREE MODEL CHANGES.. WE NEED TO JUST NOT OVERDO IT.
+  }
+
+  private void setVisibleOtherPane(Set<DefaultMutableTreeNode> visible) {
+    for (DefaultMutableTreeNode n : visible) {
+      if (!visibleInOtherTree.contains(n)) {
+        getTreeModel().nodeChanged(n);
+      }
+    }
+    for (DefaultMutableTreeNode n : visibleInOtherTree) {
+      if (!visible.contains(n)) {
+        getTreeModel().nodeChanged(n);
+      }
+    }
+    visibleInOtherTree = visible;
   }
 
   public boolean isHighlightNodesShownInBothTrees() {
@@ -394,7 +447,11 @@ public class InspectorPanel extends JPanel implements Disposable, InspectorServi
   }
 
   protected DiagnosticsNode findDiagnosticsValue(InspectorInstanceRef ref) {
-    return getDiagnosticNode(valueToTreeNode.get(ref));
+    return getDiagnosticNode(findTreeNodeValue(ref));
+  }
+
+  protected DefaultMutableTreeNode findTreeNodeValue(InspectorInstanceRef ref) {
+    return valueToTreeNode.get(ref);
   }
 
   protected void endShowNode() {
@@ -1203,6 +1260,10 @@ public class InspectorPanel extends JPanel implements Disposable, InspectorServi
   boolean hasPlaceholderChildren(DefaultMutableTreeNode node) {
     return node.getChildCount() == 0 ||
            (node.getChildCount() == 1 && ((DefaultMutableTreeNode)node.getFirstChild()).getUserObject() instanceof String);
+  }
+
+  public boolean isVisibleOtherTree(DefaultMutableTreeNode node) {
+    return visibleInOtherTree.contains(node);
   }
 
   static class PropertyNameColumnInfo extends ColumnInfo<DefaultMutableTreeNode, DiagnosticsNode> {
