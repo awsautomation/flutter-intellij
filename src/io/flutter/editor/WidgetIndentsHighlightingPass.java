@@ -8,8 +8,6 @@ package io.flutter.editor;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.*;
-import com.intellij.openapi.editor.colors.EditorColors;
-import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.markup.*;
 import com.intellij.openapi.progress.ProgressManager;
@@ -18,17 +16,24 @@ import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Segment;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
 import com.intellij.ui.Gray;
 import com.intellij.ui.JBColor;
-import com.intellij.ui.paint.LinePainter2D;
 import com.intellij.util.DocumentUtil;
-import com.intellij.util.text.CharArrayUtil;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
+import com.jetbrains.lang.dart.psi.*;
+import io.flutter.dart.FlutterDartAnalysisServer;
+import io.flutter.inspector.*;
 import io.flutter.settings.FlutterSettings;
 import org.dartlang.analysis.server.protocol.FlutterOutline;
+import org.dartlang.analysis.server.protocol.FlutterOutlineAttribute;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
+import java.awt.event.MouseEvent;
 import java.util.List;
 import java.util.*;
 
@@ -89,12 +94,17 @@ import static java.lang.Math.*;
 public class WidgetIndentsHighlightingPass {
   private static final Logger LOG = Logger.getInstance(WidgetIndentsHighlightingPass.class);
 
-  private final static Stroke SOLID_STROKE = new BasicStroke(1);
-  private final static JBColor VERY_LIGHT_GRAY = new JBColor(Gray._224, Gray._80);
-  private final static JBColor SHADOW_GRAY = new JBColor(Gray._192, Gray._100);
-  private final static JBColor OUTLINE_LINE_COLOR = new JBColor(Gray._128, Gray._128);
-  private final static JBColor OUTLINE_LINE_COLOR_PAST_BLOCK = new JBColor(new Color(128, 128, 128, 65), new Color(128, 128, 128, 65));
-  private final static JBColor BUILD_METHOD_STRIPE_COLOR = new JBColor(new Color(0xc0d8f0), new Color(0x8d7043));
+  // XXX move these somewhere more standard.
+  public final static Color TOOLTIP_BACKGROUND_COLOR = new Color(60, 60, 60, 230);
+  public final static Color HIGHLIGHTED_RENDER_OBJECT_FILL_COLOR = new Color( 128, 128, 255, 128);
+  public final static Color HIGHLIGHTED_RENDER_OBJECT_BORDER_COLOR = new Color(64, 64, 128, 128);
+
+  public final static Stroke SOLID_STROKE = new BasicStroke(1);
+  public final static JBColor VERY_LIGHT_GRAY = new JBColor(Gray._224, Gray._80);
+  public final static JBColor SHADOW_GRAY = new JBColor(Gray._192, Gray._100);
+  public final static JBColor OUTLINE_LINE_COLOR = new JBColor(Gray._128, Gray._128);
+  public final static JBColor OUTLINE_LINE_COLOR_PAST_BLOCK = new JBColor(new Color(128, 128, 128, 65), new Color(128, 128, 128, 65));
+  public final static JBColor BUILD_METHOD_STRIPE_COLOR = new JBColor(new Color(0xc0d8f0), new Color(0x8d7043));
 
   private static final Key<WidgetIndentsPassData> INDENTS_PASS_DATA_KEY = Key.create("INDENTS_PASS_DATA_KEY");
 
@@ -103,6 +113,7 @@ public class WidgetIndentsHighlightingPass {
    */
   private final static boolean DEBUG_WIDGET_INDENTS = false;
 
+  /// XXX find where this moved.
   private static class WidgetCustomHighlighterRenderer implements CustomHighlighterRenderer {
     private final WidgetIndentGuideDescriptor descriptor;
     private final Document document;
@@ -426,16 +437,24 @@ public class WidgetIndentsHighlightingPass {
   private final Project myProject;
   private final VirtualFile myFile;
   private final boolean convertOffsets;
+  private final PsiFile psiFile;
+  private final FlutterDartAnalysisServer flutterDartAnalysisService;
 
-  WidgetIndentsHighlightingPass(@NotNull Project project, @NotNull EditorEx editor, boolean convertOffsets) {
+  WidgetIndentsHighlightingPass(@NotNull Project project, @NotNull EditorEx editor, boolean convertOffsets, FlutterDartAnalysisServer flutterDartAnalysisService, InspectorService inspectorService) {
     this.myDocument = editor.getDocument();
     this.myEditor = editor;
     this.myProject = project;
     this.myFile = editor.getVirtualFile();
     this.convertOffsets = convertOffsets;
+    this.flutterDartAnalysisService = flutterDartAnalysisService;
+    psiFile = PsiDocumentManager.getInstance(myProject).getPsiFile(myDocument);
+    final WidgetIndentsPassData data = getIndentsPassData();
+    data.inspectorService = inspectorService;
+    /// XXX cleanup
+    setIndentsPassData(editor, data);
   }
 
-  private static void drawVerticalLineHelper(
+  public static void drawVerticalLineHelper(
     Graphics2D g,
     Color lineColor,
     int x,
@@ -469,7 +488,7 @@ public class WidgetIndentsHighlightingPass {
     final CustomHighlighterRenderer renderer = h.getCustomRenderer();
     if (renderer instanceof WidgetCustomHighlighterRenderer) {
       final WidgetCustomHighlighterRenderer widgetRenderer = (WidgetCustomHighlighterRenderer)renderer;
-      return widgetRenderer.descriptor.compareTo(r.descriptor);
+      return widgetRenderer.getDescriptor().compareTo(r.descriptor);
     }
     return -1;
   }
@@ -489,19 +508,119 @@ public class WidgetIndentsHighlightingPass {
   public static void onCaretPositionChanged(EditorEx editor, Caret caret) {
     final WidgetIndentsPassData data = getIndentsPassData(editor);
     if (data == null || data.highlighters == null) return;
-    for (RangeHighlighter h : data.highlighters) {
-      if (h.getCustomRenderer() instanceof WidgetIndentsHighlightingPass.WidgetCustomHighlighterRenderer) {
-        final WidgetIndentsHighlightingPass.WidgetCustomHighlighterRenderer renderer =
-          (WidgetIndentsHighlightingPass.WidgetCustomHighlighterRenderer)h.getCustomRenderer();
-        final boolean changed = renderer.updateSelected(editor, h, caret);
-        if (changed) {
-          editor.repaint(h.getStartOffset(), h.getEndOffset());
-        }
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      renderer.updateSelected(caret);
+    }
+  }
+
+  public static void onInspectorDataChange(EditorEx editor, boolean force) {
+    final WidgetIndentsPassData data = getIndentsPassData(editor);
+    if (data == null) {
+      return;
+    }
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      renderer.onInspectorDataChange(force); /// XXX lazily invalidate.
+    }
+  }
+
+  public static void onVisibleAreaChanged(EditorEx editor, Rectangle oldRectangle, Rectangle newRectangle) {
+    WidgetIndentsPassData data = getIndentsPassData(editor);
+    if (data == null) {
+      data = new WidgetIndentsPassData();
+      setIndentsPassData(editor, data);
+    }
+    data.visibleRect = newRectangle;
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      renderer.updateVisibleArea(newRectangle);
+    }
+  }
+
+  public static void onInspectorAvaiable(EditorEx editor, InspectorService inspectorService) {
+    WidgetIndentsPassData data = getIndentsPassData(editor);
+    if (data == null) {
+      data = new WidgetIndentsPassData();
+      setIndentsPassData(editor, data);
+    }
+    data.inspectorService = inspectorService;
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      renderer.onInspectorAvailable();
+    }
+  }
+
+  public static void onSelectionChanged(EditorEx editor, DiagnosticsNode selection) {
+    WidgetIndentsPassData data = getIndentsPassData(editor);
+    if (data == null) {
+      data = new WidgetIndentsPassData();
+      setIndentsPassData(editor, data);
+    }
+    data.inspectorSelection = selection;
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      renderer.onSelectionChanged();
+    }
+  }
+
+
+  public static void onMouseMoved(EditorEx editor, MouseEvent event) {
+    final WidgetIndentsPassData data = getIndentsPassData(editor);
+    if (data == null || data.highlighters == null) return;
+
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      if (event.isConsumed()) {
+        renderer.onMouseExited(event);
       }
+      else {
+        renderer.onMouseMoved(event);
+      }
+    }
+  }
+  public static void onFlutterFrame(EditorEx editor) {
+    final WidgetIndentsPassData data = getIndentsPassData(editor);
+    if (data == null || data.highlighters == null) return;
+
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      renderer.onFlutterFrame();
+    }
+  }
+
+  public static void onMousePressed(EditorEx editor, MouseEvent event) {
+    final WidgetIndentsPassData data = getIndentsPassData(editor);
+    if (data == null || data.highlighters == null) return;
+
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      renderer.onMousePressed(event);
+      if (event.isConsumed()) break;
+    }
+  }
+
+  public static void onMouseClicked(EditorEx editor, MouseEvent event) {
+    final WidgetIndentsPassData data = getIndentsPassData(editor);
+    if (data == null || data.highlighters == null) return;
+
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      renderer.onMouseClicked(event);
+      if (event.isConsumed()) break;
+    }
+  }
+  public static void onMouseEntered(EditorEx editor, MouseEvent event) {
+    final WidgetIndentsPassData data = getIndentsPassData(editor);
+    if (data == null || data.highlighters == null) return;
+
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      renderer.onMouseEntered(event);
+    }
+  }
+
+  public static void onMouseExited(EditorEx editor, MouseEvent event) {
+    final WidgetIndentsPassData data = getIndentsPassData(editor);
+    if (data == null || data.highlighters == null) return;
+
+    for (WidgetViewModeInterface renderer : data.getRenderers()) {
+      renderer.onMouseExited(event);
     }
   }
 
   private static WidgetIndentsPassData getIndentsPassData(Editor editor) {
+    if (editor == null) return null;
     return editor.getUserData(INDENTS_PASS_DATA_KEY);
   }
 
@@ -517,17 +636,33 @@ public class WidgetIndentsHighlightingPass {
     final WidgetIndentsPassData data = getIndentsPassData(editor);
     if (data == null) return;
 
-    final List<RangeHighlighter> oldHighlighters = data.highlighters;
+    List<RangeHighlighter> oldHighlighters = data.highlighters;
     if (oldHighlighters != null) {
       for (RangeHighlighter highlighter : oldHighlighters) {
         disposeHighlighter(highlighter);
       }
     }
+
+    /*
+     oldHighlighters = data.propertyHighlighters;
+    if (oldHighlighters != null) {
+      for (RangeHighlighter highlighter : oldHighlighters) {
+        disposeHighlighter(highlighter);
+      }
+    }
+
+     */
     setIndentsPassData(editor, null);
   }
 
-  public static void run(@NotNull Project project, @NotNull EditorEx editor, @NotNull FlutterOutline outline, boolean convertOffsets) {
-    final WidgetIndentsHighlightingPass widgetIndentsHighlightingPass = new WidgetIndentsHighlightingPass(project, editor, convertOffsets);
+  public static void run(@NotNull Project project,
+                         @NotNull EditorEx editor,
+                         @NotNull FlutterOutline outline,
+                         FlutterDartAnalysisServer flutterDartAnalysisService,
+                         @Nullable InspectorService inspectorService,
+                         boolean convertOffsets                         
+                         ) {
+    final WidgetIndentsHighlightingPass widgetIndentsHighlightingPass = new WidgetIndentsHighlightingPass(project, editor, convertOffsets, flutterDartAnalysisService, inspectorService);
     widgetIndentsHighlightingPass.setOutline(outline);
   }
 
@@ -553,12 +688,17 @@ public class WidgetIndentsHighlightingPass {
     final ArrayList<WidgetIndentGuideDescriptor> descriptors = new ArrayList<>();
 
     buildWidgetDescriptors(descriptors, outline, null);
+    for (int i = 0; i< descriptors.size() - 1; i++) {
+      descriptors.get(i).nextSibling = descriptors.get(i+1);
+    }
     updateHitTester(new WidgetIndentHitTester(descriptors, myDocument), data);
     // TODO(jacobr): we need to trigger a rerender of highlighters that will render differently due to the changes in highlighters?
     data.myDescriptors = descriptors;
     doCollectInformationUpdateOutline(data);
     doApplyIndentInformationToEditor(data);
+    // XXXdoApplyPropertyInformationToEditor(data);
     setIndentsPassData(data);
+    updatePreviewHighlighter(myEditor.getMarkupModel(), data);
   }
 
   private void updateHitTester(WidgetIndentHitTester hitTester, WidgetIndentsPassData data) {
@@ -594,13 +734,14 @@ public class WidgetIndentsHighlightingPass {
         ProgressManager.checkCanceled();
         final TextRange range;
         if (descriptor.widget != null) {
-          range = descriptor.widget.getTextRange();
+          range = descriptor.widget.getFullRange();
         }
         else {
           final int endOffset =
             descriptor.endLine < myDocument.getLineCount() ? myDocument.getLineStartOffset(descriptor.endLine) : myDocument.getTextLength();
           range = new TextRange(myDocument.getLineStartOffset(descriptor.startLine), endOffset);
         }
+        descriptor.trackLocations(myDocument); // XXX we are tracking from multiple places.
         ranges.add(new TextRangeDescriptorPair(range, descriptor));
       }
       ranges.sort((a, b) -> Segment.BY_START_OFFSET_THEN_END_OFFSET.compare(a.range, b.range));
@@ -621,6 +762,68 @@ public class WidgetIndentsHighlightingPass {
       // after document change some range highlighters could have become
       // invalid, or the order could have been broken.
       // This is similar to logic in FilteredIndentsHighlightingPass.java that also attempts to
+      // only update highlighters that have actually changed.
+      oldHighlighters.sort(Comparator.comparing((RangeHighlighter h) -> !h.isValid())
+                             .thenComparing(Segment.BY_START_OFFSET_THEN_END_OFFSET));
+      int curHighlight = 0;
+      // It is fine if we cleanupHighlighters and update some old highlighters that are
+      // still valid but it is not ok if we leave even one highlighter that
+      // really changed as that will cause rendering artifacts.
+      while (curRange < ranges.size() && curHighlight < oldHighlighters.size()) {
+        final TextRangeDescriptorPair entry = ranges.get(curRange);
+        final RangeHighlighter highlighter = oldHighlighters.get(curHighlight);
+
+        if (!highlighter.isValid()) break;
+
+        final int cmp = compare(entry, highlighter);
+        if (cmp < 0) {
+          newHighlighters.add(createHighlighter(mm, entry, data));
+          curRange++;
+        }
+        else if (cmp > 0) {
+          disposeHighlighter(highlighter);
+          curHighlight++;
+        }
+        else {
+          newHighlighters.add(highlighter);
+          curHighlight++;
+          curRange++;
+        }
+      }
+
+      for (; curHighlight < oldHighlighters.size(); curHighlight++) {
+        final RangeHighlighter highlighter = oldHighlighters.get(curHighlight);
+        if (!highlighter.isValid()) break;
+        disposeHighlighter(highlighter);
+      }
+    }
+
+
+    final int startRangeIndex = curRange;
+    assert myDocument != null;
+    DocumentUtil.executeInBulk(myDocument, ranges.size() > 10000, () -> {
+      for (int i = startRangeIndex; i < ranges.size(); i++) {
+        newHighlighters.add(createHighlighter(mm, ranges.get(i), data));
+      }
+    });
+
+    data.highlighters = newHighlighters;
+  }
+
+  public void doApplyPropertyInformationToEditor(WidgetIndentsPassData data) {
+    /*
+    final MarkupModel mm = myEditor.getMarkupModel();
+
+    final List<RangeHighlighter> oldHighlighters = data.propertyHighlighters;
+    final List<RangeHighlighter> newHighlighters = new ArrayList<>();
+
+    int curRange = 0;
+
+    final List<TextRangeDescriptorPair> ranges = data.myRangesWidgets;
+    if (oldHighlighters != null) {
+      // after document change some range highlighters could have become
+      // invalid, or the order could have been broken.
+      // This is similar to logic in FliteredIndentsHighlightingPass.java that also attempts to
       // only update highlighters that have actually changed.
       oldHighlighters.sort(Comparator.comparing((RangeHighlighter h) -> !h.isValid())
                              .thenComparing(Segment.BY_START_OFFSET_THEN_END_OFFSET));
@@ -657,6 +860,7 @@ public class WidgetIndentsHighlightingPass {
       }
     }
 
+
     final int startRangeIndex = curRange;
     assert myDocument != null;
     DocumentUtil.executeInBulk(myDocument, ranges.size() > 10000, () -> {
@@ -666,6 +870,8 @@ public class WidgetIndentsHighlightingPass {
     });
 
     data.highlighters = newHighlighters;
+
+     */
   }
 
   DartAnalysisServerService getAnalysisService() {
@@ -716,6 +922,14 @@ public class WidgetIndentsHighlightingPass {
     return new OutlineLocation(node, line, column, indent, myFile, this);
   }
 
+  DartCallExpression getCallExpression(PsiElement element) {
+    if (element == null) { return null; }
+    if (element instanceof DartCallExpression) {
+      return (DartCallExpression) element;
+    }
+
+    return getCallExpression(element.getParent());
+  }
   private void buildWidgetDescriptors(
     final List<WidgetIndentGuideDescriptor> widgetDescriptors,
     FlutterOutline outlineNode,
@@ -724,32 +938,49 @@ public class WidgetIndentsHighlightingPass {
     if (outlineNode == null) return;
 
     final String kind = outlineNode.getKind();
-    final boolean widgetConstructor = "NEW_INSTANCE".equals(kind);
+    final boolean widgetConstructor = "NEW_INSTANCE".equals(kind) || (parent != null && ("VARIABLE".equals(kind)));
 
     final List<FlutterOutline> children = outlineNode.getChildren();
-    if (children == null || children.isEmpty()) return;
+//    if (children == null || children.isEmpty()) return;
 
     if (widgetConstructor) {
       final OutlineLocation location = computeLocation(outlineNode);
-
       int minChildIndent = Integer.MAX_VALUE;
       final ArrayList<OutlineLocation> childrenLocations = new ArrayList<>();
       int endLine = location.getLine();
-      for (FlutterOutline child : children) {
-        final OutlineLocation childLocation = computeLocation(child);
-        if (childLocation.getLine() <= location.getLine()) {
-          // Skip children that don't actually occur on a later line. There is no
-          // way for us to draw good looking line art for them.
-          // TODO(jacobr): consider adding these children anyway so we can render
-          // them if there are edits and they are now properly formatted.
-          continue;
-        }
 
-        minChildIndent = min(minChildIndent, childLocation.getIndent());
-        endLine = max(endLine, childLocation.getLine());
-        childrenLocations.add(childLocation);
+      if (children != null) {
+        for (FlutterOutline child : children) {
+          final OutlineLocation childLocation = computeLocation(child);
+          if (childLocation.getLine() <= location.getLine()) {
+            // Skip children that don't actually occur on a later line. There is no
+            // way for us to draw good looking line art for them.
+            // TODO(jacobr): consider adding these children anyway so we can render
+            // them if there are edits and they are now properly formatted.
+            continue;
+          }
+
+          minChildIndent = min(minChildIndent, childLocation.getIndent());
+          endLine = max(endLine, childLocation.getLine());
+          childrenLocations.add(childLocation);
+        }
       }
-      if (!childrenLocations.isEmpty()) {
+      final Set<Integer> childrenOffsets = new HashSet<Integer>();
+      for (OutlineLocation childLocation : childrenLocations) {
+        childrenOffsets.add(childLocation.getGuideOffset());
+      }
+
+      final PsiElement element=  psiFile.findElementAt(location.getGuideOffset());
+      final ArrayList<WidgetIndentGuideDescriptor.WidgetPropertyDescriptor> trustedAttributes = new ArrayList<>();
+      final List<FlutterOutlineAttribute> attributes = outlineNode.getAttributes();
+      if (attributes != null) {
+        for (FlutterOutlineAttribute attribute : attributes) {
+          trustedAttributes.add(new WidgetIndentGuideDescriptor.WidgetPropertyDescriptor(attribute));
+        }
+      }
+
+      // XXX if (!childrenLocations.isEmpty())
+      {
         // The indent is only used for sorting and disambiguating descriptors
         // as at render time we will pick the real indent for the outline based
         // on local edits that may have been made since the outline was computed.
@@ -760,21 +991,26 @@ public class WidgetIndentsHighlightingPass {
           location.getLine(),
           endLine + 1,
           childrenLocations,
-          location
+          location,
+          trustedAttributes,
+          outlineNode
         );
-        if (!descriptor.childLines.isEmpty()) {
+        // if (!descriptor.childLines.isEmpty())
+        {
           widgetDescriptors.add(descriptor);
           parent = descriptor;
         }
       }
     }
-    for (FlutterOutline child : children) {
-      buildWidgetDescriptors(widgetDescriptors, child, parent);
+    if (children != null) {
+      for (FlutterOutline child : children) {
+        buildWidgetDescriptors(widgetDescriptors, child, parent);
+      }
     }
   }
 
   @NotNull
-  private RangeHighlighter createHighlighter(MarkupModel mm, TextRangeDescriptorPair entry) {
+  private RangeHighlighter createHighlighter(MarkupModel mm, TextRangeDescriptorPair entry, WidgetIndentsPassData data) {
     final TextRange range = entry.range;
     final FlutterSettings settings = FlutterSettings.getInstance();
     if (range.getEndOffset() >= myDocument.getTextLength() && DEBUG_WIDGET_INDENTS) {
@@ -793,9 +1029,51 @@ public class WidgetIndentsHighlightingPass {
       highlighter.setErrorStripeTooltip("Flutter build method");
       highlighter.setThinErrorStripeMark(true);
     }
-    highlighter.setCustomRenderer(new WidgetCustomHighlighterRenderer(entry.descriptor, myDocument));
+    final WidgetViewModelData d = new WidgetViewModelData(entry.descriptor, myDocument, data, flutterDartAnalysisService, myEditor, highlighter);
+    highlighter.setCustomRenderer(new WidgetCustomHighlighterRenderer(d));
     return highlighter;
   }
+
+  @NotNull
+  private void updatePreviewHighlighter(MarkupModel mm, WidgetIndentsPassData data) {
+    if (data.previewsForEditor == null) {
+      final TextRange range = new TextRange(0, Integer.MAX_VALUE);
+      final RangeHighlighter highlighter =
+        mm.addRangeHighlighter(
+          0,
+          myDocument.getTextLength(),
+          HighlighterLayer.FIRST,
+          null,
+          HighlighterTargetArea.LINES_IN_RANGE
+        );
+      WidgetViewModelDataBase d = new WidgetViewModelDataBase(highlighter, myDocument, data, flutterDartAnalysisService, myEditor);
+      data.previewsForEditor = new PreviewsForEditor(d);
+      highlighter.setCustomRenderer(data.previewsForEditor);
+    } else {
+      data.previewsForEditor.outlinesChanged(data.myDescriptors);
+    }
+  }
+  /*
+  @NotNull
+  private RangeHighlighter createPropertyHighlighter(MarkupModel mm, TextRangeDescriptorPair entry) {
+    final TextRange range = entry.range;
+    final FlutterSettings settings = FlutterSettings.getInstance();
+    if (range.getEndOffset() >= myDocument.getTextLength() && DEBUG_WIDGET_INDENTS) {
+      LOG.info("Warning: highlighter extends past the end of document.");
+    }
+    final RangeHighlighter highlighter =
+      mm.addRangeHighlighter(
+        Math.max(range.getStartOffset(), 0),
+        Math.min(range.getEndOffset(), myDocument.getTextLength()),
+        HighlighterLayer.FIRST,
+        null,
+        HighlighterTargetArea.EXACT_RANGE
+      );
+    highlighter.setCustomRenderer(new PropertyValueRenderer(entry.descriptor, myDocument));
+    return highlighter;
+  }
+
+   */
 }
 
 /**
@@ -803,6 +1081,10 @@ public class WidgetIndentsHighlightingPass {
  * multiple runs of the WidgetIndentsHighlightingPass.
  */
 class WidgetIndentsPassData {
+  public Rectangle visibleRect;
+  public InspectorService inspectorService;
+  public DiagnosticsNode inspectorSelection;
+  public PreviewsForEditor previewsForEditor;
   /**
    * Descriptors describing the data model to render the widget indents.
    * <p>
@@ -823,6 +1105,9 @@ class WidgetIndentsPassData {
    */
   List<RangeHighlighter> highlighters;
 
+  /// XXX remove
+  // List<RangeHighlighter> propertyHighlighters;
+
   /**
    * Source of truth for whether other UI overlaps with the widget indents.
    */
@@ -832,6 +1117,23 @@ class WidgetIndentsPassData {
    * Outline the widget indents are based on.
    */
   FlutterOutline outline;
+
+  Iterable<WidgetViewModeInterface> getRenderers() {
+    final ArrayList<WidgetViewModeInterface> renderers = new ArrayList<>();
+    if (highlighters != null) {
+      for (RangeHighlighter h : highlighters) {
+        if (h.getCustomRenderer() instanceof WidgetViewModel) {
+          final WidgetCustomHighlighterRenderer renderer =
+            (WidgetCustomHighlighterRenderer)h.getCustomRenderer();
+          renderers.add(renderer);
+        }
+      }
+    }
+    if (previewsForEditor != null) {
+      renderers.add(previewsForEditor);
+    }
+    return renderers;
+  }
 }
 
 class TextRangeDescriptorPair {

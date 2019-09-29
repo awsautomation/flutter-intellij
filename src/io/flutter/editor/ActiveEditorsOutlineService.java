@@ -94,7 +94,7 @@ public class ActiveEditorsOutlineService implements Disposable {
       if (!(fileEditor instanceof TextEditor)) continue;
       final TextEditor textEditor = (TextEditor)fileEditor;
       final Editor editor = textEditor.getEditor();
-      if (editor instanceof EditorEx) {
+      if (editor instanceof EditorEx && !editor.isDisposed()) {
         dartEditors.add((EditorEx)editor);
       }
     }

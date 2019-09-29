@@ -353,8 +353,10 @@ public class FlutterView implements PersistentStateComponent<FlutterViewState>, 
     }
     else {
       whenCompleteUiThread(
-        InspectorService.create(app, app.getFlutterDebugProcess(), app.getVmService()),
+        app.getFlutterDebugProcess().getInspectorService(),
         (InspectorService inspectorService, Throwable throwable) -> {
+          // XXX remove
+          // app.getFlutterDebugProcess().setInspectorService(inspectorService);
           if (throwable != null) {
             FlutterUtils.warn(LOG, throwable);
             return;
@@ -420,6 +422,9 @@ public class FlutterView implements PersistentStateComponent<FlutterViewState>, 
           onAppChanged(app);
           final PerAppState state = perAppViewState.remove(app);
           if (state != null && state.content != null) {
+            for (InspectorPanel panel : state.inspectorPanels) {
+              panel.dispose();
+            }
             contentManager.removeContent(state.content, true);
           }
           if (perAppViewState.isEmpty()) {
