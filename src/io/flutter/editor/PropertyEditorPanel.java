@@ -311,7 +311,7 @@ public class PropertyEditorPanel extends JBPanel {
                 EnumValueWrapper wrapper = (EnumValueWrapper)e.getItem();
                 if (wrapper.item != null) {
                   SourceChange change = flutterDartAnalysisService
-                    .setWidgetPropertyValue(property.getId(), new FlutterWidgetPropertyValue(null, null, null, null, wrapper.item));
+                    .setWidgetPropertyValue(property.getId(), new FlutterWidgetPropertyValue(null, null, null, null, wrapper.item, null));
                   System.out.println("XXX set property result = " + change);
                   if (change != null) {
                     ApplicationManager.getApplication().runWriteAction(() -> {

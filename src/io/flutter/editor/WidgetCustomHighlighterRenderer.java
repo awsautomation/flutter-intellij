@@ -12,6 +12,7 @@ import com.intellij.openapi.editor.markup.CustomHighlighterRenderer;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.ui.Gray;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.paint.LinePainter2D;
 import com.intellij.util.text.CharArrayUtil;
@@ -40,8 +41,6 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
   }
 
   void dispose() {
-    // Descriptors must be disposed so they stop getting notified about
-    // changes to the Editor.
     data.descriptor.dispose();
   }
 
@@ -118,7 +117,7 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
     final int indentColumn = startPosition.column;
 
     final LogicalPosition logicalPosition = caretModel.getLogicalPosition();
-    if (logicalPosition.line == startLine + 1 && data.descriptor.widget != null) {
+    if (logicalPosition.line == startLine + 1 && getDescriptor().widget != null) {
       // Be more permissive about what constitutes selection for the first
       // line within a widget constructor.
       return setSelection(caretModel.getLogicalPosition().column >= indentColumn);
@@ -127,21 +126,12 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
       caretOffset >= off && caretOffset < endOffset && caretModel.getLogicalPosition().column == indentColumn);
   }
 
-  // XXX optimize
-  private static float computeStringWidth(Editor editor, String text, Font font) {
-    if (StringUtil.isEmpty(text)) return 0;
-    final FontMetrics metrics = editor.getComponent().getFontMetrics(font);
-
-    final FontRenderContext fontRenderContext = metrics.getFontRenderContext();
-    return (float)font.getStringBounds(text, fontRenderContext).getWidth();
-  }
-
   @Override
   public void paint(@NotNull Editor editor, @NotNull RangeHighlighter highlighter, @NotNull Graphics g) {
     if (!highlighter.isValid()) {
       return;
     }
-    if (!data.descriptor.widget.isValid()) {
+    if (!getDescriptor().widget.isValid()) {
       return;
     }
     final FlutterSettings settings = FlutterSettings.getInstance();
@@ -219,10 +209,10 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
           // TODO(jacobr): detect other const like things and hide them.
           if (!constValue)
           {
-            final float width = computeStringWidth(editor, text, font);
+           //  final float width = computeStringWidth(editor, text, font);
             //          g2d.setColor(JBColor.LIGHT_GRAY);
             //        g2d.fillRect(start.x, start.y, (int)width + 8, lineHeight);
-            g2d.setColor(WidgetIndentsHighlightingPass.SHADOW_GRAY);
+            g2d.setColor(FlutterEditorColors.SHADOW_GRAY);
             g2d.drawString(text, start.x + 4, start.y + lineHeight - 4);
           }
         }
@@ -247,8 +237,8 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
     // case that the first indent guide line is, say, single-line comment where comment symbols ('//') are located at the first
     // visual column. We need to calculate correct indent guide column then.
     int lineShift = 1;
-    if (indentColumn <= 0 && data.descriptor != null) {
-      indentColumn = data.descriptor.indentLevel;
+    if (indentColumn <= 0 && descriptor != null) {
+      indentColumn = descriptor.indentLevel;
       lineShift = 0;
     }
     if (indentColumn <= 0) return;
@@ -269,7 +259,7 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
     final Point start = editor.visualPositionToXY(new VisualPosition(startPosition.line + lineShift, indentColumn));
 
     final VisualPosition endPosition = editor.offsetToVisualPosition(endOffset);
-    final ArrayList<OutlineLocation> childLines = data.descriptor.childLines;
+    final ArrayList<OutlineLocation> childLines = descriptor.childLines;
     final Point end = editor.visualPositionToXY(endPosition);
     double splitY = -1;
     int maxY = end.y;
@@ -296,7 +286,7 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
     }
     // By default we stop at the start of the last line instead of the end of the last line in the range.
     if (includeLastLine) {
-      maxY += editor.getLineHeight();
+      maxY += lineHeight;
     }
 
     if (clip != null) {
@@ -307,11 +297,11 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
     }
 
     final EditorColorsScheme scheme = editor.getColorsScheme();
-    final JBColor lineColor = selected ? JBColor.BLUE : WidgetIndentsHighlightingPass.OUTLINE_LINE_COLOR;
+    final JBColor lineColor = selected ? JBColor.BLUE : FlutterEditorColors.OUTLINE_LINE_COLOR;
     g2d.setColor(lineColor);
-    final Color pastBlockColor = selected ? scheme.getColor(EditorColors.SELECTED_INDENT_GUIDE_COLOR) : WidgetIndentsHighlightingPass.OUTLINE_LINE_COLOR_PAST_BLOCK;
+    final Color pastBlockColor = selected ? scheme.getColor(EditorColors.SELECTED_INDENT_GUIDE_COLOR) : FlutterEditorColors.OUTLINE_LINE_COLOR_PAST_BLOCK;
 
-    // TODO(jacobr): this logic for softwraps is duplicated for the FliteredIndentsHighlightingPass
+    // TODO(jacobr): this logic for softwraps is duplicated for the FilteredIndentsHighlightingPass
     // and may be more conservative than sensible for WidgetIndents.
 
     // There is a possible case that indent line intersects soft wrap-introduced text. Example:
@@ -419,8 +409,8 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
       }
       if (!softWraps.isEmpty() && softWraps.get(0).getIndentInColumns() < indentColumn) {
         if (y < newY || i > startLine + lineShift) { // There is a possible case that soft wrap is located on indent start line.
-          WidgetIndentsHighlightingPass.drawVerticalLineHelper(g2d, lineColor, start.x, y, newY + lineHeight, childLines,
-                                                               showMultipleChildrenGuides);
+          drawVerticalLineHelper(g2d, lineColor, start.x, y, newY + lineHeight, childLines,
+                                 showMultipleChildrenGuides);
         }
         newY += logicalLineHeight;
         y = newY;
@@ -441,7 +431,7 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
     }
     if (y < maxY) {
       if (splitY != -1) {
-        WidgetIndentsHighlightingPass.drawVerticalLineHelper(g2d, lineColor, start.x, y, splitY, childLines, showMultipleChildrenGuides);
+        drawVerticalLineHelper(g2d, lineColor, start.x, y, splitY, childLines, showMultipleChildrenGuides);
         g2d.setColor(pastBlockColor);
         g2d.drawLine(start.x + 2, (int)splitY + 1, start.x + 2, maxY);
       }
@@ -453,4 +443,42 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
     g2d.dispose();
   }
 
+  public static void drawVerticalLineHelper(
+    Graphics2D g,
+    Color lineColor,
+    int x,
+    double yStart,
+    double yEnd,
+    ArrayList<OutlineLocation> childLines,
+    boolean showMultipleChildrenGuides
+  ) {
+    if (childLines != null && childLines.size() >= 2 && showMultipleChildrenGuides) {
+      // TODO(jacobr): optimize this code a bit. This is a sloppy way to draw these lines.
+      g.setStroke(FlutterEditorColors.SOLID_STROKE);
+      g.setColor(lineColor);
+      g.drawLine(x + 1, (int)yStart, x + 1, (int)yEnd + 1);
+      g.drawLine(x + 2, (int)yStart, x + 2, (int)yEnd + 1);
+    }
+    else {
+      g.setColor(lineColor);
+      g.drawLine(x + 2, (int)yStart, x + 2, (int)yEnd + 1);
+    }
+  }
+
+  public static int compare(@NotNull TextRangeDescriptorPair r, @NotNull RangeHighlighter h) {
+    int answer = r.range.getStartOffset() - h.getStartOffset();
+    if (answer != 0) {
+      return answer;
+    }
+    answer = r.range.getEndOffset() - h.getEndOffset();
+    if (answer != 0) {
+      return answer;
+    }
+    final CustomHighlighterRenderer renderer = h.getCustomRenderer();
+    if (renderer instanceof WidgetCustomHighlighterRenderer) {
+      final WidgetCustomHighlighterRenderer widgetRenderer = (WidgetCustomHighlighterRenderer)renderer;
+      return widgetRenderer.getDescriptor().compareTo(r.descriptor);
+    }
+    return -1;
+  }
 }

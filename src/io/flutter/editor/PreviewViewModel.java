@@ -23,6 +23,7 @@ import java.awt.event.MouseEvent;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 import static io.flutter.inspector.InspectorService.toSourceLocationUri;
@@ -867,13 +868,12 @@ public class PreviewViewModel extends WidgetViewModel {
               polygon.addPoint((int)Math.round(point.getX()), (int)Math.round(point.getY()));
             }
 
-            if (first && _nodes.size() > 0 && !box.getValueRef().equals(_nodes.get(0).getValueRef()))
-            {
-              g2d.setColor(WidgetIndentsHighlightingPass.HIGHLIGHTED_RENDER_OBJECT_BORDER_COLOR);
+            if (first && _nodes.size() > 0 && !Objects.equals(box.getValueRef(), _nodes.get(0).getValueRef())) {
+              g2d.setColor(FlutterEditorColors.HIGHLIGHTED_RENDER_OBJECT_BORDER_COLOR);
               g2d.fillPolygon(polygon);
             }
-            g2d.setStroke(WidgetIndentsHighlightingPass.SOLID_STROKE);
-            g2d.setColor(WidgetIndentsHighlightingPass.HIGHLIGHTED_RENDER_OBJECT_BORDER_COLOR);
+            g2d.setStroke(FlutterEditorColors.SOLID_STROKE);
+            g2d.setColor(FlutterEditorColors.HIGHLIGHTED_RENDER_OBJECT_BORDER_COLOR);
             g2d.drawPolygon(polygon);
           }
           first = false;
@@ -883,7 +883,7 @@ public class PreviewViewModel extends WidgetViewModel {
     } else {
       g2d.setColor(isSelected ? JBColor.GRAY: JBColor.LIGHT_GRAY);
       g2d.fillRect(screenshotBounds.x, screenshotBounds.y, screenshotBounds.width, screenshotBounds.height);
-      g2d.setColor(WidgetIndentsHighlightingPass.SHADOW_GRAY);
+      g2d.setColor(FlutterEditorColors.SHADOW_GRAY);
       g2d.setColor(JBColor.BLACK);
       if (descriptor == null) {
         String message = getInspectorService() == null ? "Run the application to\nactivate device mirror." : "Loading...";
