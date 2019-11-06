@@ -685,7 +685,7 @@ public class InspectorService implements Disposable {
       });
     }
 
-    public CompletableFuture<ScreenshotBoxesPair> getScreenshotWithSelection(DiagnosticsNode root, DiagnosticsNode target, int width, int height, double maxPixelRatio) {
+    public CompletableFuture<ScreenshotBoxesPair> getScreenshotWithSelectionDeprecated(DiagnosticsNode root, DiagnosticsNode target, int width, int height, double maxPixelRatio) {
       final JsonObject params = new JsonObject();
       params.addProperty("width", width);
       params.addProperty("height", height);
@@ -697,6 +697,43 @@ public class InspectorService implements Disposable {
       params.addProperty("groupName", groupName);
       return nullIfDisposed(() -> {
         return inspectorLibrary.invokeServiceMethod("ext.flutter.inspector.screenshoWithSelection", params).thenApplyAsync(
+          (JsonObject response) -> {
+            if (response == null || response.get("result").isJsonNull()) {
+              System.out.println("XXX invalid json");
+              return null;
+            }
+            final JsonObject result = response.getAsJsonObject("result");
+            Screenshot screenshot = null;
+            final JsonElement screenshotJson = result.get("screenshot");
+            if (screenshotJson != null && !screenshotJson.isJsonNull()) {
+              screenshot = getScreenshotFromJson(screenshotJson.getAsJsonObject());
+            }
+            ArrayList<DiagnosticsNode> boxes = null;
+            final JsonElement boxesJson = result.get("boxes");
+            if (boxesJson != null && !boxesJson.isJsonNull()) {
+              boxes = parseDiagnosticsNodesHelper(boxesJson.getAsJsonArray(), null);
+            }
+            return new ScreenshotBoxesPair(screenshot, boxes);
+          });
+      });
+    }
+
+    public CompletableFuture<ScreenshotBoxesPair> getScreenshotAtLocation(String file, int line, int column, int count, DiagnosticsNode target, int width, int height, double maxPixelRatio) {
+      final JsonObject params = new JsonObject();
+      params.addProperty("file", file);
+      params.addProperty("line", line);
+      params.addProperty("column", column);
+      params.addProperty("count", count);
+      params.addProperty("width", width);
+      params.addProperty("height", height);
+      params.addProperty("maxPixelRatio", maxPixelRatio);
+      // TODO(jacobr): maybe remove targetId?
+      if (target != null && target.getValueRef() != null) {
+        params.addProperty("targetId", target.getValueRef().getId());
+      }
+      params.addProperty("groupName", groupName);
+      return nullIfDisposed(() -> {
+        return inspectorLibrary.invokeServiceMethod("ext.flutter.inspector.screenshotAtLocation", params).thenApplyAsync(
           (JsonObject response) -> {
             if (response == null || response.get("result").isJsonNull()) {
               System.out.println("XXX invalid json");

@@ -390,11 +390,12 @@ public class PreviewViewModel extends WidgetViewModel {
     if (visible) {
       computeScreenshotBounds();
       if (getInspectorService() != null) {
+        /*
         computeActiveElements();
         if (screenshot == null || !isNodesEmpty()) {
           // XXX call a helper instead.
           onActiveNodesChanged();
-        }
+        }*/
         if (screenshot == null || screenshotDirty) {
           System.out.println("XXX fetching screenshot due to visiblity change");
           fetchScreenshot(false);
@@ -727,9 +728,10 @@ public class PreviewViewModel extends WidgetViewModel {
       previewWidth = round(previewWidth * previewWidthScale);
       previewHeight = round(previewHeight * previewWidthScale);
     }
-    computeActiveElements();
 
-    System.out.println("XXX fetching screenshot for " + root.getDescription() +" -- " + data.editor.getVirtualFile().getPath());
+    System.out.println("XXX fetching screenshot for -- " + data.editor.getVirtualFile().getPath());
+
+
     long startTime = System.currentTimeMillis();
     CompletableFuture<InspectorService.ScreenshotBoxesPair> screenshotFuture =
       group.getScreenshotWithSelection(root,  inspectorSelection, toPixels(previewWidth), toPixels(previewHeight), getDPI() * 0.7);

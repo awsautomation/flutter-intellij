@@ -35,7 +35,6 @@ public abstract class WidgetViewModel implements CustomHighlighterRenderer,
   private InspectorObjectGroupManager groups;
   boolean isDisposed = false;
 
-
   Rectangle visibleRect;
   DiagnosticsNode inspectorSelection;
   InspectorService inspectorService;
@@ -141,7 +140,7 @@ public abstract class WidgetViewModel implements CustomHighlighterRenderer,
     }
 
     if (value) {
-      computeActiveElements();
+      // XXX computeActiveElements();
     }
     return true;
   }
@@ -188,7 +187,43 @@ public abstract class WidgetViewModel implements CustomHighlighterRenderer,
     onVisibleChanged();
   }
 
-  void computeActiveElements() {
+  Location getLocation() {
+    final String file = data.editor != null ? toSourceLocationUri(data.editor.getVirtualFile().getPath()) : null;
+    final CompletableFuture<ArrayList<DiagnosticsNode>> nodesFuture;
+    if (data.descriptor == null) {
+      // Special case for whole app preview.
+      return null;
+    } else {
+      assert (data.editor != null);
+      assert (data.document != null);
+      int line = data.descriptor.widget.getLine();
+      int column = data.descriptor.widget.getColumn();
+      // XXX is this the right range?
+      final Document document = data.descriptor.widget.getDocument();
+      final TextRange range = data.descriptor.widget.getGuideTextRange();
+      if (range != null) {
+        final int offset = max(0, range.getStartOffset());
+        // FIXup handling of Foo.bar named constructors.
+        final int documentEnd = data.document.getTextLength();
+        final int constructorStart = range.getEndOffset() - 1;
+        final int candidateEnd = min(documentEnd, constructorStart + 1000); // XX hack.
+        final String text = data.document.getText(new TextRange(constructorStart, candidateEnd));
+        for (int i = 0; i < text.length(); ++i) {
+          char c = text.charAt(i);
+          if (c == '.') {
+            final int offsetKernel = constructorStart + i + 1;
+            line = document.getLineNumber(offsetKernel);
+            column = data.descriptor.widget.getColumnForOffset(offsetKernel);
+            break;
+          }
+          if (c == '(') break;
+        }
+      }
+      return Location(file, line + 1, column + 1);
+    }
+  }
+
+  void computeActiveElementsDeprecated() {
     final InspectorObjectGroupManager groupManager = getGroups();
     if (groupManager == null) {
       return;
