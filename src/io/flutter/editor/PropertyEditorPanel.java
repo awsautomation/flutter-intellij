@@ -19,7 +19,6 @@ import com.intellij.openapi.util.TextRange;
 import com.intellij.ui.ColorChooserService;
 import com.intellij.ui.ColorPickerListener;
 import com.intellij.ui.awt.RelativePoint;
-import com.intellij.ui.colorpicker.ColorPickerBuilder;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBTextField;

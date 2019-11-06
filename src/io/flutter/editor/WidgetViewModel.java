@@ -187,9 +187,8 @@ public abstract class WidgetViewModel implements CustomHighlighterRenderer,
     onVisibleChanged();
   }
 
-  Location getLocation() {
+  InspectorService.Location getLocation() {
     final String file = data.editor != null ? toSourceLocationUri(data.editor.getVirtualFile().getPath()) : null;
-    final CompletableFuture<ArrayList<DiagnosticsNode>> nodesFuture;
     if (data.descriptor == null) {
       // Special case for whole app preview.
       return null;
@@ -202,11 +201,12 @@ public abstract class WidgetViewModel implements CustomHighlighterRenderer,
       final Document document = data.descriptor.widget.getDocument();
       final TextRange range = data.descriptor.widget.getGuideTextRange();
       if (range != null) {
-        final int offset = max(0, range.getStartOffset());
+        final int offset = Math.max(0, range.getStartOffset());
         // FIXup handling of Foo.bar named constructors.
         final int documentEnd = data.document.getTextLength();
         final int constructorStart = range.getEndOffset() - 1;
         final int candidateEnd = min(documentEnd, constructorStart + 1000); // XX hack.
+        // XXX handle out of range bugs.
         final String text = data.document.getText(new TextRange(constructorStart, candidateEnd));
         for (int i = 0; i < text.length(); ++i) {
           char c = text.charAt(i);
@@ -219,7 +219,7 @@ public abstract class WidgetViewModel implements CustomHighlighterRenderer,
           if (c == '(') break;
         }
       }
-      return Location(file, line + 1, column + 1);
+      return new InspectorService.Location(file, line + 1, column + 1);
     }
   }
 
@@ -245,32 +245,7 @@ public abstract class WidgetViewModel implements CustomHighlighterRenderer,
         return ret;
       });
     } else {
-      assert (data.editor != null);
-      assert (data.document != null);
-      int line = data.descriptor.widget.getLine();
-      int column = data.descriptor.widget.getColumn();
-      // XXX is this the right range?
-      final Document document = data.descriptor.widget.getDocument();
-      final TextRange range = data.descriptor.widget.getGuideTextRange();
-      if (range != null) {
-        final int offset = range.getStartOffset();
-        // FIXup handling of Foo.bar named constructors.
-        final int documentEnd = data.document.getTextLength();
-        final int constructorStart = range.getEndOffset() - 1;
-        final int candidateEnd = min(documentEnd, constructorStart + 1000); // XX hack.
-        final String text = data.document.getText(new TextRange(constructorStart, candidateEnd));
-        for (int i = 0; i < text.length(); ++i) {
-          char c = text.charAt(i);
-          if (c == '.') {
-            final int offsetKernel = constructorStart + i + 1;
-            line = document.getLineNumber(offsetKernel);
-            column = data.descriptor.widget.getColumnForOffset(offsetKernel);
-            break;
-          }
-          if (c == '(') break;
-        }
-      }
-      nodesFuture = group.getElementsAtLocation(file, line + 1, column + 1, 10);
+      nodesFuture = group.getElementsAtLocation(getLocation(), 10);
     }
     group.safeWhenComplete(nodesFuture, (nextNodes, error) -> {
       if (error != null || isDisposed) {

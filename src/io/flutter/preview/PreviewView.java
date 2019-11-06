@@ -330,6 +330,10 @@ XXX MERGY
     tree.addTreeSelectionListener(treeSelectionListener);
 
     scrollPane = ScrollPaneFactory.createScrollPane(tree);
+    content.setPreferredFocusableComponent(tree);
+
+    contentManager.addContent(content);
+    contentManager.setSelectedContent(content);
 
     previewArea = new PreviewArea(project, new PreviewArea.Listener() {
       @Override
@@ -862,13 +866,13 @@ XXX MERGY
     }
   }
 
-  private void showNotRenderableInPreviewArea(@NotNull FlutterOutline widget) {
+  private void showNotRenderableInPreviewArea() {
     final JPanel panel = new JPanel();
     panel.setLayout(new MigLayout("insets 0", "[grow, center]", "[grow, bottom][grow 200, top]"));
 
     panel.add(new JBLabel(PreviewArea.NOT_RENDERABLE), "cell 0 0");
 
-    // XXX probably remove.
+
     final LinkLabel linkLabel = LinkLabel.create("Preview not available...", () -> {
     });
     panel.add(linkLabel, "cell 0 1");
@@ -876,44 +880,6 @@ XXX MERGY
     previewArea.clear(panel);
 
     minimizePreviewArea();
-  }
-
-  private void showLocalException(@NotNull Throwable localException) {
-    final JPanel panel = new JPanel();
-    panel.setLayout(new MigLayout("insets 0", "[grow, center]", "[grow, bottom][grow 200, top]"));
-
-    panel.add(new JBLabel("Encountered an exception during rendering"), "cell 0 0");
-
-    final LinkLabel linkLabel = LinkLabel.create("Show exception...", () -> {
-      final StringWriter stringWriter = new StringWriter();
-      final PrintWriter printWriter = new PrintWriter(stringWriter);
-      printWriter.println(localException.getMessage());
-      localException.printStackTrace(printWriter);
-      final Module module = currentFile == null ? null : ModuleUtil.findModuleForFile(currentFile, project);
-      FlutterConsoles.displayMessage(project, module, stringWriter.toString().trim(), true);
-    });
-    panel.add(linkLabel, "cell 0 1");
-
-    previewArea.clear(panel);
-  }
-
-  private void showRemoteException(@NotNull JsonObject remoteException) {
-    final JPanel panel = new JPanel();
-    panel.setLayout(new MigLayout("insets 0", "[grow, center]", "[grow, bottom][grow 200, top]"));
-
-    panel.add(new JBLabel("Encountered an exception during rendering"), "cell 0 0");
-
-    final LinkLabel linkLabel = LinkLabel.create("Show exception...", () -> {
-      final StringWriter stringWriter = new StringWriter();
-      final PrintWriter printWriter = new PrintWriter(stringWriter);
-      printWriter.println(remoteException.get("exception").getAsString());
-      printWriter.println(remoteException.get("stackTrace").getAsString());
-      final Module module = currentFile == null ? null : ModuleUtil.findModuleForFile(currentFile, project);
-      FlutterConsoles.displayMessage(project, module, stringWriter.toString().trim(), true);
-    });
-    panel.add(linkLabel, "cell 0 1");
-
-    previewArea.clear(panel);
   }
 
   private void applyChangeAndShowException(SourceChange change) {

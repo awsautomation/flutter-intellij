@@ -34,11 +34,10 @@ import java.util.Map;
 
 public class PreviewArea {
   public static int BORDER_WIDTH = 0;
-  public static final String NOTHING_TO_SHOW = "Nothing to show";
-  public static final String NO_WIDGET_MESSAGE = "No widget selected";
-  public static final String NOT_RENDERABLE = "Selection is not a renderable widget";
+  public static final String NOTHING_TO_SHOW = "Nothing to show. Run the application to see a preview of the app.";
 
   private static final Color labelColor = new JBColor(new Color(0x333333), new Color(0xcccccc));
+  public static String NOT_RENDERABLE = "Unable to take a screenshot of the running application.";
 
   private final Listener myListener;
 
@@ -54,8 +53,6 @@ public class PreviewArea {
   private final PreviewViewModel preview;
 
   private boolean isBeingRendered = false;
-
-  private final Map<Integer, FlutterOutline> idToOutline = new HashMap<>();
 
   private final Map<FlutterOutline, JComponent> outlineToComponent = new HashMap<>();
   private final List<SelectionEditPolicy> selectionComponents = new ArrayList<>();
@@ -82,7 +79,7 @@ public class PreviewArea {
     window.setToolbar(windowToolbar.getComponent());
 
     primaryLayer.setLayout(new BorderLayout());
-    clear(NO_WIDGET_MESSAGE);
+    clear(NOTHING_TO_SHOW);
 
     // Layers must be transparent.
     handleLayer.setOpaque(false);
@@ -119,7 +116,6 @@ public class PreviewArea {
   public void clear(JComponent component) {
     setToolbarTitle(null);
 
-    idToOutline.clear();
     outlineToComponent.clear();
 
     primaryLayer.removeAll();
@@ -150,7 +146,6 @@ public class PreviewArea {
   public void show(DiagnosticsNode node) {
     isBeingRendered = false;
 
-    idToOutline.clear();
 
     primaryLayer.removeAll();
     primaryLayer.setLayout(null);

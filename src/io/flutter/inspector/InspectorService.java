@@ -41,16 +41,31 @@ import java.util.function.Supplier;
  * inspector code running in the IDE.
  */
 public class InspectorService implements Disposable {
+
+  public static class Location {
+    public Location(String file, int line, int column) {
+      this.file = file;
+      this.line = line;
+      this.column = column;
+    }
+
+    public final int line;
+    public final int column;
+    public final String file;
+  }
+
   private static int nextGroupId = 0;
 
-  public static class ScreenshotBoxesPair {
-    ScreenshotBoxesPair(Screenshot screenshot, ArrayList<DiagnosticsNode> boxes) {
+  public static class InteractiveScreenshot {
+    InteractiveScreenshot(Screenshot screenshot, ArrayList<DiagnosticsNode> boxes, ArrayList<DiagnosticsNode> elements) {
       this.screenshot = screenshot;
       this.boxes = boxes;
+      this.elements = elements;
     }
 
     public final Screenshot screenshot;
     public final ArrayList<DiagnosticsNode> boxes;
+    public final ArrayList<DiagnosticsNode> elements;
   }
 
   @NotNull private final FlutterApp app;
@@ -608,11 +623,16 @@ public class InspectorService implements Disposable {
       return parseDiagnosticsNodeDaemon(invokeServiceMethodDaemon("inspectAt", x, y, groupName));
     }
 
-    public CompletableFuture<ArrayList<DiagnosticsNode>> getElementsAtLocation(String file, int line, int column, int count) {
+    private void addLocationToParams(Location location, JsonObject params) {
+      if (location == null) return;
+      params.addProperty("file", location.file);
+      params.addProperty("line", location.line);
+      params.addProperty("column", location.column);
+    }
+
+    public CompletableFuture<ArrayList<DiagnosticsNode>> getElementsAtLocation(Location location, int count) {
       final JsonObject params = new JsonObject();
-      params.addProperty("file", file);
-      params.addProperty("line", line);
-      params.addProperty("column", column);
+      addLocationToParams(location, params);
       params.addProperty("count", count);
       params.addProperty("groupName", groupName);
 
@@ -685,7 +705,8 @@ public class InspectorService implements Disposable {
       });
     }
 
-    public CompletableFuture<ScreenshotBoxesPair> getScreenshotWithSelectionDeprecated(DiagnosticsNode root, DiagnosticsNode target, int width, int height, double maxPixelRatio) {
+    /*
+    public CompletableFuture<InteractiveScreenshot> getScreenshotWithSelectionDeprecated(DiagnosticsNode root, DiagnosticsNode target, int width, int height, double maxPixelRatio) {
       final JsonObject params = new JsonObject();
       params.addProperty("width", width);
       params.addProperty("height", height);
@@ -713,16 +734,14 @@ public class InspectorService implements Disposable {
             if (boxesJson != null && !boxesJson.isJsonNull()) {
               boxes = parseDiagnosticsNodesHelper(boxesJson.getAsJsonArray(), null);
             }
-            return new ScreenshotBoxesPair(screenshot, boxes);
+            return new InteractiveScreenshot(screenshot, boxes);
           });
       });
-    }
+    }*/
 
-    public CompletableFuture<ScreenshotBoxesPair> getScreenshotAtLocation(String file, int line, int column, int count, DiagnosticsNode target, int width, int height, double maxPixelRatio) {
+    public CompletableFuture<InteractiveScreenshot> getScreenshotAtLocation(Location location, int count, DiagnosticsNode target, int width, int height, double maxPixelRatio) {
       final JsonObject params = new JsonObject();
-      params.addProperty("file", file);
-      params.addProperty("line", line);
-      params.addProperty("column", column);
+      addLocationToParams(location, params);
       params.addProperty("count", count);
       params.addProperty("width", width);
       params.addProperty("height", height);
@@ -745,12 +764,11 @@ public class InspectorService implements Disposable {
             if (screenshotJson != null && !screenshotJson.isJsonNull()) {
               screenshot = getScreenshotFromJson(screenshotJson.getAsJsonObject());
             }
-            ArrayList<DiagnosticsNode> boxes = null;
-            final JsonElement boxesJson = result.get("boxes");
-            if (boxesJson != null && !boxesJson.isJsonNull()) {
-              boxes = parseDiagnosticsNodesHelper(boxesJson.getAsJsonArray(), null);
-            }
-            return new ScreenshotBoxesPair(screenshot, boxes);
+            return new InteractiveScreenshot(
+              screenshot,
+              parseDiagnosticsNodesHelper(result.get("boxes"), null),
+              parseDiagnosticsNodesHelper(result.get("elements"), null)
+            );
           });
       });
     }

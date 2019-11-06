@@ -16,6 +16,7 @@ import io.flutter.utils.AsyncRateLimiter;
 import io.flutter.utils.math.Matrix4;
 import io.flutter.utils.math.Vector3;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -112,7 +113,7 @@ public class PreviewViewModel extends WidgetViewModel {
     return hover;
   }
 
-  public InspectorService.ObjectGroup getScreenshotGroup() {
+  public @Nullable InspectorService.ObjectGroup getScreenshotGroup() {
     if (screenshotGroup != null && screenshotGroup.getInspectorService() == getInspectorService()) {
       return screenshotGroup;
     }
@@ -246,16 +247,24 @@ public class PreviewViewModel extends WidgetViewModel {
     if (lastPoint != null && screenshotBounds.contains(lastPoint)) {
       // TODO(jacobr): consider CROSSHAIR_CURSOR instead which gives more of
       //  a pixel selection feel.
-      data.editor.setCustomCursor(this, Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+      setCustomCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
       setMouseInScreenshot(true);
       if (!getScreenshotBoundsTight().contains(lastPoint)) {
         cancelHovers();
       }
     }
     else {
-      data.editor.setCustomCursor(this, null);
+      setCustomCursor(null);
       _mouseOutOfScreenshot();
     }
+  }
+
+  void setCustomCursor(@Nullable Cursor cursor) {
+    if (data.editor == null) {
+      // TODO(jacobr): customize the cursor when there is not an associated editor.
+      return;
+    }
+    data.editor.setCustomCursor(this, cursor);
   }
 
   void registerLastEvent(MouseEvent event) {
@@ -719,8 +728,11 @@ public class PreviewViewModel extends WidgetViewModel {
     getScreenshotRateLimiter().scheduleRequest();
   }
 
-  CompletableFuture<InspectorService.ScreenshotBoxesPair> updateScreenshot() {
+  CompletableFuture<InspectorService.InteractiveScreenshot> updateScreenshot() {
     final InspectorService.ObjectGroup group = getScreenshotGroup();
+    if (group == null ) {
+      return CompletableFuture.completedFuture(null);
+    }
     int previewWidth = PREVIEW_MAX_WIDTH;
     int previewHeight = PREVIEW_MAX_HEIGHT;
 
@@ -729,12 +741,10 @@ public class PreviewViewModel extends WidgetViewModel {
       previewHeight = round(previewHeight * previewWidthScale);
     }
 
-    System.out.println("XXX fetching screenshot for -- " + data.editor.getVirtualFile().getPath());
-
 
     long startTime = System.currentTimeMillis();
-    CompletableFuture<InspectorService.ScreenshotBoxesPair> screenshotFuture =
-      group.getScreenshotWithSelection(root,  inspectorSelection, toPixels(previewWidth), toPixels(previewHeight), getDPI() * 0.7);
+    CompletableFuture<InspectorService.InteractiveScreenshot> screenshotFuture =
+      group.getScreenshotAtLocation(getLocation(), 10, inspectorSelection, toPixels(previewWidth), toPixels(previewHeight), getDPI() * 0.7);
     group.safeWhenComplete(
       screenshotFuture, // XXX 0.7 is a hack to demo better.
       (pair, e2) -> {
