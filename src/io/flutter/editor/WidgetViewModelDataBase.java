@@ -9,30 +9,35 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
 import io.flutter.dart.FlutterDartAnalysisServer;
+import io.flutter.inspector.DiagnosticsNode;
+import io.flutter.inspector.InspectorService;
+import io.flutter.inspector.InspectorStateService;
 import io.flutter.run.daemon.FlutterApp;
+import org.jetbrains.annotations.Nullable;
+
+import java.awt.*;
 
 public class WidgetViewModelDataBase {
-  public final RangeHighlighter _highlighter;
-  public final Document document;
-  public final WidgetIndentsPassData data; // XXX for visilbe rect only.
+  public final @Nullable RangeHighlighter _highlighter;
+  public final @Nullable Document document;
   public final FlutterDartAnalysisServer flutterDartAnalysisService;
-  public final EditorEx editor;
+  public final InspectorStateService inspectorStateService;
+  public final EditorPositionService editorPositionService;
+  public final @Nullable  EditorEx editor;
 
   public WidgetViewModelDataBase(
     RangeHighlighter highlighter,
     Document document,
-    WidgetIndentsPassData data,
     FlutterDartAnalysisServer flutterDartAnalysisService,
-    EditorEx editor) {
+    InspectorStateService inspectorStateService,
+    EditorPositionService editorPositionService,
+    EditorEx editor
+    ) {
     this._highlighter = highlighter;
     this.document = document;
-    this.data = data;
     this.flutterDartAnalysisService = flutterDartAnalysisService;
+    this.inspectorStateService = inspectorStateService;
+    this.editorPositionService = editorPositionService;
     this.editor = editor;
-  }
-
-  public FlutterApp getApp() {
-    if (data == null || data.inspectorService == null) return null;
-    return data.inspectorService.getApp();
   }
 }

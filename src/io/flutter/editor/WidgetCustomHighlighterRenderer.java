@@ -5,34 +5,43 @@
  */
 package io.flutter.editor;
 
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.editor.*;
 import com.intellij.openapi.editor.colors.EditorColors;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.markup.CustomHighlighterRenderer;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
-import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.ui.Gray;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.paint.LinePainter2D;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.ui.UIUtil;
+import io.flutter.inspector.DiagnosticsNode;
+import io.flutter.inspector.InspectorService;
+import io.flutter.inspector.InspectorStateService;
 import io.flutter.settings.FlutterSettings;
 import org.dartlang.analysis.server.protocol.FlutterOutlineAttribute;
 import org.jetbrains.annotations.NotNull;
 
 import java.awt.*;
 import java.awt.event.MouseEvent;
-import java.awt.font.FontRenderContext;
 import java.util.ArrayList;
 import java.util.List;
 
 import static java.lang.Math.*;
 
-public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements CustomHighlighterRenderer {
+public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements CustomHighlighterRenderer, EditorPositionService.Listener, Disposable {
 
-  WidgetCustomHighlighterRenderer(WidgetViewModelData data) {
+  private final InspectorStateService inspectorStateService;
+  private final EditorMouseEventService editorEventService;
+
+  WidgetCustomHighlighterRenderer(WidgetViewModelData data, Project project) {
     super(data);
+    inspectorStateService = InspectorStateService.getInstance(project);
+    inspectorStateService.addListener(this);
+    editorEventService = EditorMouseEventService.getInstance(project);
+    editorEventService.addListener( data.editor, this);
   }
 
   @Override
@@ -40,7 +49,10 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
 
   }
 
-  void dispose() {
+  @Override
+  public void dispose() {
+    editorEventService.removeListener(data.editor, this);
+    inspectorStateService.removeListener(this);
     data.descriptor.dispose();
   }
 
@@ -55,7 +67,7 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
   }
 
   @Override
-  public void onMouseClicked(MouseEvent event) {
+  public void onMouseReleased(MouseEvent event) {
 
   }
 
@@ -74,6 +86,21 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
     if (updateSelectedHelper(carat)) {
       forceRender();
     }
+  }
+
+  @Override
+  public void onSelectionChanged(DiagnosticsNode selection) {
+
+  }
+
+  @Override
+  public void onInspectorAvailable(InspectorService service) {
+
+  }
+
+  @Override
+  public void requestRepaint(boolean force) {
+
   }
 
   @Override
@@ -160,16 +187,18 @@ public class WidgetCustomHighlighterRenderer extends WidgetViewModel implements 
 
     final WidgetIndentGuideDescriptor descriptor = getDescriptor();
     if (descriptor != null && descriptor.properties != null && !descriptor.properties.isEmpty()){
-      Rectangle safeClip = new Rectangle(clip);
-      safeClip.width = max(data.data.visibleRect.width - 280, 0);
-      g2d.clip(safeClip);
+      if (visibleRect != null) {
+        Rectangle safeClip = new Rectangle(clip);
+        safeClip.width = max(visibleRect.width - 280, 0);
+        g2d.clip(safeClip);
+      }
       final Font font = UIUtil.getFont(UIUtil.FontSize.NORMAL, UIUtil.getTreeFont());
       g2d.setFont(font);
 
       for (WidgetIndentGuideDescriptor.WidgetPropertyDescriptor property : descriptor.properties) {
-        int propertyEndOffset = property.getEndOffset();
-        int propertyLine = doc.getLineNumber(propertyEndOffset);
-        int lineEndOffset = doc.getLineEndOffset(propertyLine);
+        final int propertyEndOffset = property.getEndOffset();
+        final int propertyLine = doc.getLineNumber(propertyEndOffset);
+        final int lineEndOffset = doc.getLineEndOffset(propertyLine);
 
         VisualPosition visualPosition = editor.offsetToVisualPosition(lineEndOffset); // e
         visualPosition = new VisualPosition(visualPosition.line, max(visualPosition.column + 1, 4));

@@ -19,8 +19,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.ui.Gray;
-import com.intellij.ui.JBColor;
 import com.intellij.util.DocumentUtil;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.psi.*;
@@ -30,10 +28,7 @@ import io.flutter.settings.FlutterSettings;
 import org.dartlang.analysis.server.protocol.FlutterOutline;
 import org.dartlang.analysis.server.protocol.FlutterOutlineAttribute;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
-import java.awt.*;
-import java.awt.event.MouseEvent;
 import java.util.List;
 import java.util.*;
 
@@ -108,18 +103,31 @@ public class WidgetIndentsHighlightingPass {
   private final boolean convertOffsets;
   private final PsiFile psiFile;
   private final FlutterDartAnalysisServer flutterDartAnalysisService;
+  private final InspectorStateService inspectorStateService;
+  private final EditorMouseEventService editorEventService;
+  private final EditorPositionService editorPositionService;
 
-  WidgetIndentsHighlightingPass(@NotNull Project project, @NotNull EditorEx editor, boolean convertOffsets, FlutterDartAnalysisServer flutterDartAnalysisService, InspectorService inspectorService) {
+  WidgetIndentsHighlightingPass(
+    @NotNull Project project,
+    @NotNull EditorEx editor,
+    boolean convertOffsets,
+    FlutterDartAnalysisServer flutterDartAnalysisService,
+    InspectorStateService inspectorStateService,
+    EditorMouseEventService editorEventService,
+    EditorPositionService editorPositionService
+  ) {
     this.myDocument = editor.getDocument();
     this.myEditor = editor;
     this.myProject = project;
     this.myFile = editor.getVirtualFile();
     this.convertOffsets = convertOffsets;
     this.flutterDartAnalysisService = flutterDartAnalysisService;
+    this.inspectorStateService = inspectorStateService;
+    this.editorEventService = editorEventService;
+    this.editorPositionService = editorPositionService;
+
     psiFile = PsiDocumentManager.getInstance(myProject).getPsiFile(myDocument);
     final WidgetIndentsPassData data = getIndentsPassData();
-    data.inspectorService = inspectorService;
-    /// XXX cleanup
     setIndentsPassData(editor, data);
   }
 
@@ -150,120 +158,6 @@ public class WidgetIndentsHighlightingPass {
 
   public static boolean isIndentGuideHidden(WidgetIndentHitTester hitTester, @NotNull LineRange lineRange) {
     return hitTester != null && hitTester.intersects(lineRange);
-  }
-
-  public static void onCaretPositionChanged(EditorEx editor, Caret caret) {
-    final WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null || data.highlighters == null) return;
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      renderer.updateSelected(caret);
-    }
-  }
-
-  public static void onInspectorDataChange(EditorEx editor, boolean force) {
-    final WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null) {
-      return;
-    }
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      renderer.onInspectorDataChange(force); /// XXX lazily invalidate.
-    }
-  }
-
-  public static void onVisibleAreaChanged(EditorEx editor, Rectangle oldRectangle, Rectangle newRectangle) {
-    WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null) {
-      data = new WidgetIndentsPassData();
-      setIndentsPassData(editor, data);
-    }
-    data.visibleRect = newRectangle;
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      renderer.updateVisibleArea(newRectangle);
-    }
-  }
-
-  public static void onInspectorAvaiable(EditorEx editor, InspectorService inspectorService) {
-    WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null) {
-      data = new WidgetIndentsPassData();
-      setIndentsPassData(editor, data);
-    }
-    data.inspectorService = inspectorService;
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      renderer.onInspectorAvailable();
-    }
-  }
-
-  public static void onSelectionChanged(EditorEx editor, DiagnosticsNode selection) {
-    WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null) {
-      data = new WidgetIndentsPassData();
-      setIndentsPassData(editor, data);
-    }
-    data.inspectorSelection = selection;
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      renderer.onSelectionChanged();
-    }
-  }
-
-
-  public static void onMouseMoved(EditorEx editor, MouseEvent event) {
-    final WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null || data.highlighters == null) return;
-
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      if (event.isConsumed()) {
-        renderer.onMouseExited(event);
-      }
-      else {
-        renderer.onMouseMoved(event);
-      }
-    }
-  }
-  public static void onFlutterFrame(EditorEx editor) {
-    final WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null || data.highlighters == null) return;
-
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      renderer.onFlutterFrame();
-    }
-  }
-
-  public static void onMousePressed(EditorEx editor, MouseEvent event) {
-    final WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null || data.highlighters == null) return;
-
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      renderer.onMousePressed(event);
-      if (event.isConsumed()) break;
-    }
-  }
-
-  public static void onMouseClicked(EditorEx editor, MouseEvent event) {
-    final WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null || data.highlighters == null) return;
-
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      renderer.onMouseClicked(event);
-      if (event.isConsumed()) break;
-    }
-  }
-  public static void onMouseEntered(EditorEx editor, MouseEvent event) {
-    final WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null || data.highlighters == null) return;
-
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      renderer.onMouseEntered(event);
-    }
-  }
-
-  public static void onMouseExited(EditorEx editor, MouseEvent event) {
-    final WidgetIndentsPassData data = getIndentsPassData(editor);
-    if (data == null || data.highlighters == null) return;
-
-    for (WidgetViewModeInterface renderer : data.getRenderers()) {
-      renderer.onMouseExited(event);
-    }
   }
 
   private static WidgetIndentsPassData getIndentsPassData(Editor editor) {
@@ -306,10 +200,20 @@ public class WidgetIndentsHighlightingPass {
                          @NotNull EditorEx editor,
                          @NotNull FlutterOutline outline,
                          FlutterDartAnalysisServer flutterDartAnalysisService,
-                         @Nullable InspectorService inspectorService,
-                         boolean convertOffsets                         
+                         InspectorStateService inspectorStateService,
+                         EditorMouseEventService editorEventService,
+                         EditorPositionService editorPositionService,
+                         boolean convertOffsets
                          ) {
-    final WidgetIndentsHighlightingPass widgetIndentsHighlightingPass = new WidgetIndentsHighlightingPass(project, editor, convertOffsets, flutterDartAnalysisService, inspectorService);
+    final WidgetIndentsHighlightingPass widgetIndentsHighlightingPass = new WidgetIndentsHighlightingPass(
+      project,
+      editor,
+      convertOffsets,
+      flutterDartAnalysisService,
+      inspectorStateService,
+      editorEventService,
+      editorPositionService
+    );
     widgetIndentsHighlightingPass.setOutline(outline);
   }
 
@@ -676,8 +580,9 @@ public class WidgetIndentsHighlightingPass {
       highlighter.setErrorStripeTooltip("Flutter build method");
       highlighter.setThinErrorStripeMark(true);
     }
-    final WidgetViewModelData d = new WidgetViewModelData(entry.descriptor, myDocument, data, flutterDartAnalysisService, myEditor, highlighter);
-    highlighter.setCustomRenderer(new WidgetCustomHighlighterRenderer(d));
+    final WidgetViewModelData d = new WidgetViewModelData(
+      entry.descriptor, myDocument, flutterDartAnalysisService, inspectorStateService, editorPositionService, myEditor, highlighter);
+    highlighter.setCustomRenderer(new WidgetCustomHighlighterRenderer(d, myProject));
     return highlighter;
   }
 
@@ -693,12 +598,18 @@ public class WidgetIndentsHighlightingPass {
           null,
           HighlighterTargetArea.LINES_IN_RANGE
         );
-      WidgetViewModelDataBase d = new WidgetViewModelDataBase(highlighter, myDocument, data, flutterDartAnalysisService, myEditor);
-      data.previewsForEditor = new PreviewsForEditor(d);
+      WidgetViewModelDataBase d = new WidgetViewModelDataBase(
+        highlighter,
+        myDocument,
+        flutterDartAnalysisService,
+        inspectorStateService,
+        editorPositionService,
+        myEditor
+      );
+      data.previewsForEditor = new PreviewsForEditor(d, editorEventService);
       highlighter.setCustomRenderer(data.previewsForEditor);
-    } else {
-      data.previewsForEditor.outlinesChanged(data.myDescriptors);
     }
+    data.previewsForEditor.outlinesChanged(data.myDescriptors);
   }
   /*
   @NotNull
@@ -721,66 +632,6 @@ public class WidgetIndentsHighlightingPass {
   }
 
    */
-}
-
-/**
- * Data describing widget indents for an editor that is persisted across
- * multiple runs of the WidgetIndentsHighlightingPass.
- */
-class WidgetIndentsPassData {
-  public Rectangle visibleRect;
-  public InspectorService inspectorService;
-  public DiagnosticsNode inspectorSelection;
-  public PreviewsForEditor previewsForEditor;
-  /**
-   * Descriptors describing the data model to render the widget indents.
-   * <p>
-   * This data is computed from the FlutterOutline and contains additional
-   * information to manage how the locations need to be updated to reflect
-   * edits to the documents.
-   */
-  List<WidgetIndentGuideDescriptor> myDescriptors = Collections.emptyList();
-
-  /**
-   * Descriptors combined with their current locations in the possibly modified document.
-   */
-  List<TextRangeDescriptorPair> myRangesWidgets = Collections.emptyList();
-
-  /**
-   * Highlighters that perform the actual rendering of the widget indent
-   * guides.
-   */
-  List<RangeHighlighter> highlighters;
-
-  /// XXX remove
-  // List<RangeHighlighter> propertyHighlighters;
-
-  /**
-   * Source of truth for whether other UI overlaps with the widget indents.
-   */
-  WidgetIndentHitTester hitTester;
-
-  /**
-   * Outline the widget indents are based on.
-   */
-  FlutterOutline outline;
-
-  Iterable<WidgetViewModeInterface> getRenderers() {
-    final ArrayList<WidgetViewModeInterface> renderers = new ArrayList<>();
-    if (highlighters != null) {
-      for (RangeHighlighter h : highlighters) {
-        if (h.getCustomRenderer() instanceof WidgetViewModel) {
-          final WidgetCustomHighlighterRenderer renderer =
-            (WidgetCustomHighlighterRenderer)h.getCustomRenderer();
-          renderers.add(renderer);
-        }
-      }
-    }
-    if (previewsForEditor != null) {
-      renderers.add(previewsForEditor);
-    }
-    return renderers;
-  }
 }
 
 class TextRangeDescriptorPair {

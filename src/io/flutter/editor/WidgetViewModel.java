@@ -5,12 +5,15 @@
  */
 package io.flutter.editor;
 
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.RangeMarker;
+import com.intellij.openapi.editor.markup.CustomHighlighterRenderer;
 import com.intellij.openapi.util.TextRange;
 import io.flutter.inspector.DiagnosticsNode;
 import io.flutter.inspector.InspectorObjectGroupManager;
 import io.flutter.inspector.InspectorService;
+import io.flutter.inspector.InspectorStateService;
+import io.flutter.run.daemon.FlutterApp;
 
 import java.awt.*;
 import java.util.ArrayList;
@@ -20,13 +23,27 @@ import java.util.concurrent.CompletableFuture;
 import static io.flutter.inspector.InspectorService.toSourceLocationUri;
 import static java.lang.Math.min;
 
-public abstract class WidgetViewModel implements WidgetViewModeInterface {
+public abstract class WidgetViewModel implements CustomHighlighterRenderer,
+                                                 EditorMouseEventService.Listener,
+                                                 InspectorStateService.Listener,
+                                                 EditorPositionService.Listener, Disposable {
   protected boolean isSelected = false;
+  // TODO(jacobr): make this private.
   final WidgetViewModelData data;
 
   boolean visible = false;
   private InspectorObjectGroupManager groups;
   boolean isDisposed = false;
+
+
+  Rectangle visibleRect;
+  DiagnosticsNode inspectorSelection;
+  InspectorService inspectorService;
+
+  public FlutterApp getApp() {
+    if (inspectorService == null) return null;
+    return inspectorService.getApp();
+  }
 
   InspectorObjectGroupManager getGroups() {
     final InspectorService service = getInspectorService();
@@ -37,17 +54,29 @@ public abstract class WidgetViewModel implements WidgetViewModeInterface {
     return groups;
   }
 
-  public ArrayList<DiagnosticsNode> _nodes;
+  public ArrayList<DiagnosticsNode> nodes;
   public int activeIndex = 0;
 
-  WidgetViewModel(WidgetViewModelData data ) {
+  WidgetViewModel(WidgetViewModelData data) {
     this.data = data;
-    updateVisibleArea(data.data.visibleRect);
+    data.inspectorStateService.addListener(this);
+    if (data.editor != null) {
+      data.editorPositionService.addListener(data.editor, this);
+    }
+  }
+
+  /**
+   * Subclasses can override this method to be notified when whether the widget is visible in IntelliJ.
+   *
+   * This is whether the UI for this component is visible not whether the widget is visible on the device.
+   */
+  public void onVisibleChanged() {
   }
 
   @Override
   public void updateVisibleArea(Rectangle newRectangle) {
-    if (getDescriptor() == null) {
+    visibleRect = newRectangle;
+    if (getDescriptor() == null || data.getMarker() == null) {
       if (!visible) {
         visible = true;
         onVisibleChanged();
@@ -59,7 +88,7 @@ public abstract class WidgetViewModel implements WidgetViewModeInterface {
 
     final Point start = offsetToPoint(marker.getStartOffset());
     final Point end = offsetToPoint(marker.getEndOffset());
-    final boolean nowVisible = newRectangle.y <= end.y && newRectangle.y + newRectangle.height >= start.y ||
+    final boolean nowVisible = newRectangle == null || newRectangle.y <= end.y && newRectangle.y + newRectangle.height >= start.y ||
                                updateVisiblityLocked(newRectangle);
     if (visible != nowVisible) {
       visible = nowVisible;
@@ -69,7 +98,8 @@ public abstract class WidgetViewModel implements WidgetViewModeInterface {
   public boolean updateVisiblityLocked(Rectangle newRectangle) { return false; }
 
   @Override
-  public void onInspectorAvailable() {
+  public void onInspectorAvailable(InspectorService inspectorService) {
+    this.inspectorService = inspectorService;
     onVisibleChanged();
   }
 
@@ -77,9 +107,9 @@ public abstract class WidgetViewModel implements WidgetViewModeInterface {
     return data.editor.visualPositionToXY( data.editor.offsetToVisualPosition(offset));
   }
 
-  @Override
+  // @Override
   public void forceRender() {
-    if (!visible) return;
+    if (!visible || data.editor == null) return;
     data.editor.getComponent().repaint(); // XXX repaint rect?
     /*
     if (data.descriptor == null) {
@@ -99,8 +129,7 @@ public abstract class WidgetViewModel implements WidgetViewModeInterface {
   }
 
   public InspectorService getInspectorService() {
-    if (data.data == null ) return null;
-    return data.data.inspectorService;
+    return inspectorService;
   }
 
   boolean setSelection(boolean value) {
@@ -117,54 +146,72 @@ public abstract class WidgetViewModel implements WidgetViewModeInterface {
     return true;
   }
 
-  void dispose() {
+  @Override
+  public void dispose() {
+    if (isDisposed) return;
     isDisposed = true;
     // Descriptors must be disposed so they stop getting notified about
     // changes to the Editor.
+    data.inspectorStateService.removeListener(this);
+
+    data.inspectorStateService.addListener(this);
+    if (data.editor != null) {
+      data.editorPositionService.removeListener(data.editor, this);
+    }
+
     // TODO(Jacobr): fix missing code disposing descriptors?
     if (groups != null) {
       groups.clear(false);// XXX??
+      groups = null;
     }
   }
 
   @Override
-  public void onInspectorDataChange(boolean invalidateScreenshot) {
+  public boolean isValid() {
+    if (data.editor == null || !data.editor.isDisposed()) return true;
+    dispose();
+    return false;
+  }
+
+  @Override
+  public void onSelectionChanged(DiagnosticsNode selection) {
+    if (data.editor != null && data.editor.isDisposed()) {
+      return;
+    }
 
     final InspectorObjectGroupManager manager = getGroups();
     if (manager != null ){
       manager.cancelNext();;
     }
     // XX this might be too much.
+    // It isn't that the visiblity changed it is that the selection changed.
     onVisibleChanged();
   }
 
-  @Override
-  public void onSelectionChanged() {
-    onInspectorDataChange(false); // XXX a bit smarter and don't kill the screenshot.
-  }
-
   void computeActiveElements() {
-    InspectorObjectGroupManager groupManager = getGroups();
+    final InspectorObjectGroupManager groupManager = getGroups();
     if (groupManager == null) {
       return;
       // XXX be smart based on if the element actually changed. The ValueId should work for this.
       //        screenshot = null;
     }
     groupManager.cancelNext();
-    InspectorService.ObjectGroup group = groupManager.getNext();
+    final InspectorService.ObjectGroup group = groupManager.getNext();
     // XXX
-    final String file = toSourceLocationUri(data.editor.getVirtualFile().getPath());
-    CompletableFuture<ArrayList<DiagnosticsNode>> nodesFuture;
+    final String file = data.editor != null ? toSourceLocationUri(data.editor.getVirtualFile().getPath()) : null;
+    final CompletableFuture<ArrayList<DiagnosticsNode>> nodesFuture;
     if (data.descriptor == null) {
       // Special case for whole app preview.
       nodesFuture = group.getElementForScreenshot().thenApply((node) -> {
-        ArrayList<DiagnosticsNode> ret = new ArrayList<>();
+        final ArrayList<DiagnosticsNode> ret = new ArrayList<>();
         if (node != null) {
           ret.add(node);
         }
         return ret;
       });
     } else {
+      assert (data.editor != null);
+      assert (data.document != null);
       int line = data.descriptor.widget.getLine();
       int column = data.descriptor.widget.getColumn();
       // XXX is this the right range?
@@ -196,17 +243,17 @@ public abstract class WidgetViewModel implements WidgetViewModeInterface {
         activeIndex = 0;
         return;
       }
-      InspectorObjectGroupManager manager = getGroups();
-      if (isEquivalent(_nodes, nextNodes)) {
+      final InspectorObjectGroupManager manager = getGroups();
+      if (isEquivalent(nodes, nextNodes)) {
         onMaybeFetchScreenshot();
         manager.cancelNext();
         // Continue using the current.
       } else {
         // TODO(jacobr): simplify this logic.
-        if (_nodes != null && nextNodes != null && _nodes.size() == nextNodes.size() && nextNodes.size() > 1) {
+        if (nodes != null && nextNodes != null && nodes.size() == nextNodes.size() && nextNodes.size() > 1) {
           boolean found = false;
-          for (int i = 0; i < _nodes.size(); i++) {
-            if (nextNodes.get(0).getValueRef().equals(_nodes.get(i).getValueRef())) {
+          for (int i = 0; i < nodes.size(); i++) {
+            if (nextNodes.get(0).getValueRef().equals(nodes.get(i).getValueRef())) {
               if (i <= activeIndex) {
                 // Hacky.. fixup as we went backwards.
                 activeIndex = Math.max(0, i - 1);
@@ -237,11 +284,11 @@ public abstract class WidgetViewModel implements WidgetViewModeInterface {
   }
 
   public boolean isNodesEmpty() {
-    return _nodes == null || _nodes.isEmpty() || isDisposed;
+    return nodes == null || nodes.isEmpty() || isDisposed;
   }
 
   public void setNodes(ArrayList<DiagnosticsNode> nodes) {
-    _nodes = nodes;
+    this.nodes = nodes;
   }
 
   public void onActiveNodesChanged() {
@@ -250,14 +297,19 @@ public abstract class WidgetViewModel implements WidgetViewModeInterface {
     if (manager == null) return;
 
     if (isSelected) {
-      manager.getCurrent().setSelection(getSelectedNode().getValueRef(), false, true);
+      manager.getCurrent().setSelection(
+        getSelectedNode().getValueRef(),
+        false,
+        true
+      );
     }
   }
 
   public DiagnosticsNode getSelectedNode() {
     if (isNodesEmpty()) return null;
-    return _nodes.get(0);
+    return nodes.get(0);
   }
+
   private boolean isEquivalent(ArrayList<DiagnosticsNode> a, ArrayList<DiagnosticsNode> b) {
     if (a == b) return true;
     if (a == null || b == null) return false;
@@ -279,4 +331,11 @@ public abstract class WidgetViewModel implements WidgetViewModeInterface {
   }
 
   public WidgetIndentGuideDescriptor getDescriptor() { return data.descriptor; }
+
+  public DiagnosticsNode getCurrentNode() {
+    if (nodes == null || nodes.isEmpty()) {
+      return null;
+    }
+    return nodes.get(0);
+  }
 }

@@ -55,8 +55,11 @@ public class PreviewViewModel extends WidgetViewModel {
   private MouseEvent pendingPopupMouseEvent;
   private boolean altDown;
 
-  void dispose() {
-    super.dispose();
+
+  public void dispose() {
+    if (isDisposed ) {
+      return;
+    }
     if (mouseRateLimiter != null) {
       mouseRateLimiter.dispose();;
       mouseRateLimiter = null;
@@ -74,16 +77,29 @@ public class PreviewViewModel extends WidgetViewModel {
       hover = null;
     }
     screenshot = null;
+
+    super.dispose();
   }
+
   AsyncRateLimiter getMouseRateLimiter() {
     if (mouseRateLimiter != null) return mouseRateLimiter;
-    mouseRateLimiter = new AsyncRateLimiter(MOUSE_FRAMES_PER_SECOND, () -> { return updateMouse(false); });
+    mouseRateLimiter = new AsyncRateLimiter(MOUSE_FRAMES_PER_SECOND, () -> {
+      if (!isValid()) {
+        return CompletableFuture.completedFuture(null);
+      }
+      return updateMouse(false);
+    });
     return mouseRateLimiter;
   }
 
   AsyncRateLimiter getScreenshotRateLimiter() {
     if (screenshotRateLimiter != null) return screenshotRateLimiter;
-    screenshotRateLimiter = new AsyncRateLimiter(SCREENSHOT_FRAMES_PER_SECOND, () -> { return updateScreenshot(); });
+    screenshotRateLimiter = new AsyncRateLimiter(SCREENSHOT_FRAMES_PER_SECOND, () -> {
+      if (!isValid()) {
+        return CompletableFuture.completedFuture(null);
+      }
+      return updateScreenshot();
+    });
     return screenshotRateLimiter;
   }
 
@@ -131,22 +147,16 @@ public class PreviewViewModel extends WidgetViewModel {
     super(data);
   }
 
-
-  public void onInspectorDataChange(boolean invalidateScreenshot) {
-    if (invalidateScreenshot) {
-      screenshotDirty = true;
-    }
-    super.onInspectorDataChange(invalidateScreenshot);
-  }
-
-  public void onInspectorAvailable() {
-    onVisibleChanged();
+  @Override
+  public void onSelectionChanged(DiagnosticsNode selection) {
+    super.onSelectionChanged(selection);
+    screenshotDirty = true;
   }
 
   public CompletableFuture<?> updateMouse(boolean navigateTo) {
     final Screenshot latestScreenshot = getScreenshotNow();
     if (screenshotBounds == null || latestScreenshot == null || lastPoint == null || !getScreenshotBoundsTight().contains(lastPoint) || root == null) return CompletableFuture.completedFuture(null);
-    InspectorObjectGroupManager hoverGroups = getHovers();
+    final InspectorObjectGroupManager hoverGroups = getHovers();
     hoverGroups.cancelNext();
     final InspectorService.ObjectGroup nextGroup = hoverGroups.getNext();
     final Matrix4 matrix = buildTransformToScreenshot(latestScreenshot);
@@ -192,6 +202,7 @@ public class PreviewViewModel extends WidgetViewModel {
         if (node == null) {
           // Maybe explain what happened
         } else {
+          System.out.println("XXX node "  + node);
           _hidePopup();
           if (shiftDown) {
             final TransformedRect transform = node.getTransformToRoot();
@@ -206,7 +217,7 @@ public class PreviewViewModel extends WidgetViewModel {
                 SwingUtilities.convertPoint(data.editor.getContentComponent(), pendingPopupOpenLocation, data.editor.getComponent());
             }
             popup = PropertyEditorPanel
-              .showPopup(data.getApp(), data.editor, node, null, data.flutterDartAnalysisService, pendingPopupOpenLocation);
+              .showPopup(getApp(), data.editor, node, null, data.flutterDartAnalysisService, pendingPopupOpenLocation);
           }
         }
         pendingPopupOpenLocation = null;
@@ -226,6 +237,7 @@ public class PreviewViewModel extends WidgetViewModel {
     _mouseInScreenshot = v;
     forceRender();
   }
+
   public void updateMouseCursor() {
     if (screenshotBounds == null) {
       setMouseInScreenshot(false);
@@ -283,7 +295,8 @@ public class PreviewViewModel extends WidgetViewModel {
     }
   }
 
-  public void onMouseClicked(MouseEvent event) {
+  @Override
+  public void onMouseReleased(MouseEvent event) {
     registerLastEvent(event);
 
     if (screenshotBounds == null) return;
@@ -302,17 +315,17 @@ public class PreviewViewModel extends WidgetViewModel {
       } else {
         // Title hit.
         _hidePopup();
-        if (_nodes != null) {
-          if (_nodes.size() > 1) {
+        if (nodes != null) {
+          if (nodes.size() > 1) {
             int newIndex = this.activeIndex + 1;
-            if (newIndex >= _nodes.size()) {
+            if (newIndex >= nodes.size()) {
               newIndex = 1; // Wrap around hack case because the first index is out of order.
             }
             // TODO(jacobr): we could update activeIndex now instead of waitng for the UI to update.
-            getGroups().getCurrent().setSelection(_nodes.get(newIndex).getValueRef(), false, true);
-          } else if (_nodes.size() == 1) {
+            getGroups().getCurrent().setSelection(nodes.get(newIndex).getValueRef(), false, true);
+          } else if (nodes.size() == 1) {
             // Select current.
-            getGroups().getCurrent().setSelection(_nodes.get(0).getValueRef(), false, true);
+            getGroups().getCurrent().setSelection(nodes.get(0).getValueRef(), false, true);
           }
         }
       }
@@ -334,7 +347,14 @@ public class PreviewViewModel extends WidgetViewModel {
   }
 
   @Override
+  public void requestRepaint(boolean force) {
+    System.out.println("XXX request repaint");
+    onFlutterFrame();
+  }
+
+  @Override
   public void onFlutterFrame() {
+    System.out.println("XXX onFlutterFrame");
     fetchScreenshot(false);
   }
 
@@ -367,30 +387,39 @@ public class PreviewViewModel extends WidgetViewModel {
     if (!visible) {
       _hidePopup();
     }
-    if (visible && data != null && getInspectorService() != null) {
+    if (visible) {
       computeScreenshotBounds();
-      computeActiveElements();
-      if (screenshot == null || !isNodesEmpty()) {
-        // XXX call a helper instead.
-        onActiveNodesChanged();
-      }
-      if (screenshot == null || screenshotDirty) {
-        System.out.println("XXX fetching screenshot due to visiblity change");
-        fetchScreenshot(false);
+      if (getInspectorService() != null) {
+        computeActiveElements();
+        if (screenshot == null || !isNodesEmpty()) {
+          // XXX call a helper instead.
+          onActiveNodesChanged();
+        }
+        if (screenshot == null || screenshotDirty) {
+          System.out.println("XXX fetching screenshot due to visiblity change");
+          fetchScreenshot(false);
+        }
       }
     }
   }
 
   float previewWidthScale = 0.7f;
+  static final int defaultLineHeight = 20;
 
   public void computeScreenshotBounds() {
-    Rectangle previousScreenshotBounds = screenshotBounds;
+    final Rectangle previousScreenshotBounds = screenshotBounds;
     screenshotBounds = null;
     maxHeight = PREVIEW_MAX_HEIGHT / 6;
     final WidgetIndentGuideDescriptor descriptor = getDescriptor();
 
-    final int lineHeight = data.editor.getLineHeight();
+    final int lineHeight = data.editor != null ? data.editor.getLineHeight() : defaultLineHeight;
     extraHeight = descriptor != null && screenshot != null ? lineHeight: 0;
+
+    Rectangle visibleRect = this.visibleRect;
+    if (visibleRect == null) {
+      // XXX cleanup;
+      visibleRect = new Rectangle(0, 0, 100, 100);
+    }
 
     if (descriptor == null) {
       // Special case to float in the bottom right corner.
@@ -401,11 +430,11 @@ public class PreviewViewModel extends WidgetViewModel {
         previewWidth = (int)(latestScreenshot.image.getWidth() / getDPI());
         previewHeight = (int)(latestScreenshot.image.getHeight() / getDPI());
       }
-      int previewStartX = max(0, data.data.visibleRect.x + data.data.visibleRect.width - previewWidth - PREVIEW_PADDING_X);
-      previewHeight = min(previewHeight, data.data.visibleRect.height);
+      int previewStartX = max(0, visibleRect.x + visibleRect.width - previewWidth - PREVIEW_PADDING_X);
+      previewHeight = min(previewHeight, visibleRect.height);
 
-      maxHeight = data.data.visibleRect.height;
-      int previewStartY = max(data.data.visibleRect.y, data.data.visibleRect.y + data.data.visibleRect.height - previewHeight);
+      maxHeight = visibleRect.height;
+      int previewStartY = max(visibleRect.y, visibleRect.y + visibleRect.height - previewHeight);
       screenshotBounds = new Rectangle(previewStartX, previewStartY, previewWidth, previewHeight);
       return;
     }
@@ -432,13 +461,11 @@ public class PreviewViewModel extends WidgetViewModel {
     final Point start = data.editor.visualPositionToXY(visualPosition);
     final Point endz = offsetToPoint(endOffset);
     int endY = endz.y;
-    int visibleEndX = data.data.visibleRect.x + data.data.visibleRect.width;
+    int visibleEndX = visibleRect.x + visibleRect.width;
     int width = max(0, visibleEndX - 20 - start.x);
     int height = max(0, endY - start.y);
     int previewStartY = start.y;
     int previewStartX = start.x;
-    final Rectangle visibleRect = data.data.visibleRect;
-    assert (visibleRect != null);
     int visibleStart = visibleRect.y;
     int visibleEnd = (int)visibleRect.getMaxY();
 
@@ -520,7 +547,7 @@ public class PreviewViewModel extends WidgetViewModel {
       }
     }
     if (popupActive()) {
-      lastLockedRectangle = new Rectangle(data.data.visibleRect);
+      lastLockedRectangle = new Rectangle(visibleRect);
     }
   }
   Rectangle relativeRect;
@@ -546,8 +573,8 @@ public class PreviewViewModel extends WidgetViewModel {
     if (popupActive()) {
       return true;
     }
-    if (lastLockedRectangle != null && visible) {
-      return data.data.visibleRect.intersects(lastLockedRectangle);
+    if (lastLockedRectangle != null && visible && visibleRect != null) {
+      return visibleRect.intersects(lastLockedRectangle);
     }
     return false;
   }
@@ -605,8 +632,8 @@ public class PreviewViewModel extends WidgetViewModel {
 
     root = getSelectedNode();
     final InspectorService.ObjectGroup group = getGroups().getCurrent();
-    if (data.data.inspectorSelection != null) {
-      group.safeWhenComplete(group.getBoundingBoxes(root, data.data.inspectorSelection), (boxes, selectionError) -> {
+    if (inspectorSelection != null) {
+      group.safeWhenComplete(group.getBoundingBoxes(root, inspectorSelection), (boxes, selectionError) -> {
         if (isDisposed) return;
 
         if (selectionError != null) {
@@ -657,7 +684,7 @@ public class PreviewViewModel extends WidgetViewModel {
       priority += 1;
     }
 
-    if (screenshot == null && (_nodes == null || _nodes.isEmpty())) {
+    if (screenshot == null && (nodes == null || nodes.isEmpty())) {
       priority -= 5;
       if (getDescriptor() != null) {
         priority -= 100;
@@ -680,11 +707,13 @@ public class PreviewViewModel extends WidgetViewModel {
     screenshotDirty = true;
     if (!visible) return;
 
+    // XXX
+    /*
     InspectorObjectGroupManager groups = getGroups();
     if (isNodesEmpty() || groups == null) {
       clearScreenshot();
       return;
-    }
+    }*/
 
     getScreenshotRateLimiter().scheduleRequest();
   }
@@ -698,11 +727,12 @@ public class PreviewViewModel extends WidgetViewModel {
       previewWidth = round(previewWidth * previewWidthScale);
       previewHeight = round(previewHeight * previewWidthScale);
     }
+    computeActiveElements();
 
     System.out.println("XXX fetching screenshot for " + root.getDescription() +" -- " + data.editor.getVirtualFile().getPath());
     long startTime = System.currentTimeMillis();
     CompletableFuture<InspectorService.ScreenshotBoxesPair> screenshotFuture =
-      group.getScreenshotWithSelection(root,  data.data.inspectorSelection, toPixels(previewWidth), toPixels(previewHeight), getDPI() * 0.7);
+      group.getScreenshotWithSelection(root,  inspectorSelection, toPixels(previewWidth), toPixels(previewHeight), getDPI() * 0.7);
     group.safeWhenComplete(
       screenshotFuture, // XXX 0.7 is a hack to demo better.
       (pair, e2) -> {
@@ -748,8 +778,12 @@ public class PreviewViewModel extends WidgetViewModel {
     if (data.descriptor != null && !data.descriptor.widget.isValid()) {
       return;
     }
-    final WidgetIndentGuideDescriptor descriptor = getDescriptor();
+    final int lineHeight = editor.getLineHeight();
+    paint(g, lineHeight);
+  }
 
+  public void paint(@NotNull Graphics g, int lineHeight) {
+    final WidgetIndentGuideDescriptor descriptor = getDescriptor();
     final Graphics2D g2d = (Graphics2D)g.create();
     // Required to render colors with an alpha channel. Rendering with an
     // alpha chanel makes it easier to keep relationships between shadows
@@ -757,20 +791,7 @@ public class PreviewViewModel extends WidgetViewModel {
     // as in the case of selection or a different highlighter turning the
     // background yellow.
     g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1));
-
-    final int startOffset = highlighter.getStartOffset();
-    final Document doc = highlighter.getDocument();
-    final int textLength = doc.getTextLength();
-    if (startOffset >= textLength) return;
-
-    final int endOffset = min(highlighter.getEndOffset(), textLength);
-
-    /// XXX this start line is pointless.
-    int off;
-    int startLine = doc.getLineNumber(startOffset);
-    final int lineHeight = editor.getLineHeight();
     final Rectangle clip = g2d.getClipBounds();
-
     computeScreenshotBounds();
     if (screenshotBounds == null || !clip.intersects(screenshotBounds)) {
       return;
@@ -793,7 +814,8 @@ public class PreviewViewModel extends WidgetViewModel {
                    1);
       g2d.fillRect(screenshotBounds.x-h, screenshotBounds.y-h, 1, imageHeight + 2*h);
     }
-    g2d.clip(screenshotBounds);
+    // XXX ADD BACK
+    //g2d.clip(screenshotBounds);
 
     final Font font = UIUtil.getFont(UIUtil.FontSize.MINI, UIUtil.getTreeFont());
     g2d.setFont(font);
@@ -805,8 +827,8 @@ public class PreviewViewModel extends WidgetViewModel {
     if (latestScreenshot != null) {
       imageWidth = (int)(latestScreenshot.image.getWidth() * getDPI());
       imageHeight = (int)(latestScreenshot.image.getHeight() * getDPI());
-      g2d.setColor(Color.WHITE);
-      g2d.fillRect(screenshotBounds.x, screenshotBounds.y + extraHeight, min(screenshotBounds.width, imageWidth), min(screenshotBounds.height, imageHeight - extraHeight));
+      g2d.setColor(Color.YELLOW);
+      g2d.fillRect(screenshotBounds.x, screenshotBounds.y + extraHeight, min(screenshotBounds.width, imageWidth), min(screenshotBounds.height - extraHeight, imageHeight));
       if (extraHeight > 0) {
         g2d.setColor(Color.LIGHT_GRAY);
         g2d.fillRect(screenshotBounds.x, screenshotBounds.y, min(screenshotBounds.width, imageWidth), min(screenshotBounds.height, extraHeight));
@@ -814,7 +836,7 @@ public class PreviewViewModel extends WidgetViewModel {
         if (descriptor != null) {
           final int line = descriptor.widget.getLine() + 1;
           final int column = descriptor.widget.getColumn() + 1;
-          int numActive = _nodes != null ? _nodes.size() : 0;
+          int numActive = nodes != null ? nodes.size() : 0;
           String message = descriptor.outlineNode.getClassName() + " " ;//+ " Widget ";
           if (numActive == 0) {
             message += "(inactive)";
@@ -864,11 +886,13 @@ public class PreviewViewModel extends WidgetViewModel {
             };
 
             final Polygon polygon = new Polygon();
+            System.out.println("XXX drawing poly");
             for (Vector3 point : points) {
               polygon.addPoint((int)Math.round(point.getX()), (int)Math.round(point.getY()));
+              System.out.println("XXXX pt=" + point.getX() + ", " + point.getY());
             }
 
-            if (first && _nodes.size() > 0 && !Objects.equals(box.getValueRef(), _nodes.get(0).getValueRef())) {
+            if (first && nodes.size() > 0 && !Objects.equals(box.getValueRef(), nodes.get(0).getValueRef())) {
               g2d.setColor(FlutterEditorColors.HIGHLIGHTED_RENDER_OBJECT_BORDER_COLOR);
               g2d.fillPolygon(polygon);
             }

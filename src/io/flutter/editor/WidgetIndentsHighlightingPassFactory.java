@@ -14,8 +14,6 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.editor.EditorFactory;
-import com.intellij.openapi.editor.event.*;
 import com.intellij.openapi.editor.ex.DocumentEx;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.progress.ProgressIndicator;
@@ -25,22 +23,14 @@ import com.intellij.psi.PsiFile;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import io.flutter.FlutterUtils;
 import io.flutter.dart.FlutterDartAnalysisServer;
-import io.flutter.dart.FlutterOutlineListener;
-import io.flutter.inspector.DiagnosticsNode;
-import io.flutter.inspector.InspectorObjectGroupManager;
 import io.flutter.inspector.InspectorService;
-import io.flutter.run.daemon.FlutterApp;
+import io.flutter.inspector.InspectorStateService;
 import io.flutter.settings.FlutterSettings;
-import io.flutter.utils.AsyncUtils;
-import io.flutter.view.FlutterViewMessages;
 import org.dartlang.analysis.server.protocol.FlutterOutline;
-import org.dartlang.vm.service.VmService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Factory that drives all rendering of widget indents.
@@ -54,26 +44,27 @@ public class WidgetIndentsHighlightingPassFactory implements TextEditorHighlight
 
   private final Project project;
   private final FlutterDartAnalysisServer flutterDartAnalysisService;
+  private final InspectorStateService inspectorStateService;
+  private final EditorMouseEventService editorEventService;
+  private final EditorPositionService editorPositionService;
   private final ActiveEditorsOutlineService editorOutlineService;
-  private final Listener settingsListener;
+  private final SettingsListener settingsListener;
   private final ActiveEditorsOutlineService.Listener outlineListener;
+  protected InspectorService inspectorService;
 
   // Current configuration settings used to display Widget Indent Guides cached
   // from the FlutterSettings class.
   private boolean isShowMultipleChildrenGuides;
   private boolean isShowBuildMethodGuides;
 
-  private CompletableFuture<InspectorService> inspectorServiceFuture;
-  private InspectorService inspectorService;
-  private FlutterApp app;
-  private FlutterApp.FlutterAppListener appListener;
-  private DiagnosticsNode selection;
-
   public WidgetIndentsHighlightingPassFactory(@NotNull Project project) {
     this.project = project;
     flutterDartAnalysisService = FlutterDartAnalysisServer.getInstance(project);
     this.editorOutlineService = ActiveEditorsOutlineService.getInstance(project);
-    this.settingsListener = new Listener();
+    this.inspectorStateService = InspectorStateService.getInstance(project);
+    this.editorEventService = EditorMouseEventService.getInstance(project);
+    this.editorPositionService = EditorPositionService.getInstance(project);
+    this.settingsListener = new SettingsListener();
     this.outlineListener = this::updateEditor;
 
     TextEditorHighlightingPassRegistrar.getInstance(project)
@@ -81,184 +72,7 @@ public class WidgetIndentsHighlightingPassFactory implements TextEditorHighlight
 
     syncSettings(FlutterSettings.getInstance());
     FlutterSettings.getInstance().addListener(settingsListener);
-
-    final EditorEventMulticaster eventMulticaster = EditorFactory.getInstance().getEventMulticaster();
-    eventMulticaster.addVisibleAreaListener((VisibleAreaEvent event) -> {
-      final EditorEx editorEx = getIfValidForProject(event.getEditor());
-      if (editorEx == null) return;
-      WidgetIndentsHighlightingPass.onVisibleAreaChanged(editorEx, event.getOldRectangle(), event.getNewRectangle());
-    });
-    eventMulticaster.addEditorMouseMotionListener(new EditorMouseMotionListener() {
-      @Override
-      public void mouseMoved(@NotNull EditorMouseEvent e) {
-        final EditorEx editorEx = getIfValidForProject(e.getEditor());
-        if (editorEx == null) return;
-        WidgetIndentsHighlightingPass.onMouseMoved(editorEx, e.getMouseEvent());
-      }
-    });
-    eventMulticaster.addEditorMouseListener(new EditorMouseListener() {
-      @Override
-      public void mousePressed(@NotNull EditorMouseEvent event) {
-        final EditorEx editorEx = getIfValidForProject(event.getEditor());
-        if (editorEx == null) return;
-        WidgetIndentsHighlightingPass.onMousePressed(editorEx, event.getMouseEvent());
-      }
-
-      @Override
-      public void mouseReleased(@NotNull EditorMouseEvent event) {
-        final EditorEx editorEx = getIfValidForProject(event.getEditor());
-        if (editorEx == null) return;
-        WidgetIndentsHighlightingPass.onMouseClicked(editorEx, event.getMouseEvent());
-      }
-
-      @Override
-      public void mouseEntered(@NotNull EditorMouseEvent event) {
-        final EditorEx editorEx = getIfValidForProject(event.getEditor());
-        if (editorEx == null) return;
-        WidgetIndentsHighlightingPass.onMouseEntered(editorEx, event.getMouseEvent());
-      }
-
-      @Override
-      public void mouseExited(@NotNull EditorMouseEvent event) {
-        final EditorEx editorEx = getIfValidForProject(event.getEditor());
-        if (editorEx == null) return;
-        WidgetIndentsHighlightingPass.onMouseExited(editorEx, event.getMouseEvent());
-      }
-
-    }, this);
-
-    eventMulticaster.addCaretListener(new CaretListener() {
-      @Override
-      public void caretPositionChanged(@NotNull CaretEvent event) {
-        final EditorEx editor = getIfValidForProject(event.getEditor());
-        WidgetIndentsHighlightingPass.onCaretPositionChanged(editor, event.getCaret());
-      }
-    }, this);
-
     editorOutlineService.addListener(outlineListener);
-    project.getMessageBus().connect().subscribe(
-      FlutterViewMessages.FLUTTER_DEBUG_TOPIC, (event) -> {
-        updateActiveApp(event.app);
-      }
-    );
-  }
-
-  boolean started = false;
-  private InspectorObjectGroupManager selectionGroups;
-
-  private void requestRepaint(boolean force) {
-    AsyncUtils.invokeLater(() -> {
-      for (EditorEx editor : editorOutlineService.getActiveDartEditors()) {
-        WidgetIndentsHighlightingPass.onInspectorDataChange(editor, force);
-      }
-    });
-  }
-
-  private void loadSelection() {
-    selectionGroups.cancelNext();
-
-    final CompletableFuture<DiagnosticsNode> pendingSelectionFuture =
-      selectionGroups.getNext().getSelection(null, InspectorService.FlutterTreeType.widget, true);
-    selectionGroups.getNext().safeWhenComplete(pendingSelectionFuture, (selection, error) -> {
-      if (error != null) {
-        //                  FlutterUtils.warn(LOG, error);
-        selectionGroups.cancelNext();
-        return;
-      }
-
-      selectionGroups.promoteNext();
-      onSelectionChanged(selection);
-    });
-  }
-
-  private void updateActiveApp(FlutterApp app) {
-    if (this.app != null) {
-      this.app.removeStateListener(appListener);
-      this.app = null;
-      appListener = null;
-    }
-    this.app = app;
-    started = false;
-    // start listening for frames, reload and restart events
-    appListener = new FlutterApp.FlutterAppListener() {
-
-      @Override
-      public void stateChanged(FlutterApp.State newState) {
-        if (!started && app.isStarted()) {
-          started = true;
-          requestRepaint(false); // XXX when is this called? Probably force=true
-        }
-      }
-
-      @Override
-      public void notifyAppReloaded() {
-        requestRepaint(true);
-      }
-
-      @Override
-      public void notifyAppRestarted() {
-        requestRepaint(true);
-      }
-
-      public void notifyVmServiceAvailable(VmService vmService) {
-        // XXX run this method on the main thread.
-        //       setupConnection(vmService);
-        inspectorServiceFuture = app.getFlutterDebugProcess().getInspectorService();
-        AsyncUtils.whenCompleteUiThread(inspectorServiceFuture, (service, error) -> {
-          if (inspectorServiceFuture == null || inspectorServiceFuture.getNow(null) != service) return;
-          inspectorService = service;
-          selection = null;
-          selectionGroups = new InspectorObjectGroupManager(inspectorService, "selection");
-          loadSelection();
-
-          if (app != WidgetIndentsHighlightingPassFactory.this.app) return;
-          for (EditorEx editor : editorOutlineService.getActiveDartEditors()) {
-            WidgetIndentsHighlightingPass.onInspectorAvaiable(editor, service);
-          }
-          service.addClient(new InspectorService.InspectorServiceClient() {
-            @Override
-            public void onInspectorSelectionChanged(boolean uiAlreadyUpdated, boolean textEditorUpdated) {
-              loadSelection();
-            }
-
-            @Override
-            public void onFlutterFrame() {
-              AsyncUtils.invokeLater(() -> {
-                for (EditorEx editor : editorOutlineService.getActiveDartEditors()) {
-                  WidgetIndentsHighlightingPass.onFlutterFrame(editor);
-                }
-              });
-            }
-            @Override
-            public CompletableFuture<?> onForceRefresh() {
-              requestRepaint(true); // XXX don't need a full repaint.
-              return null;
-            }
-          });
-        });
-
-      }
-    };
-
-    app.addStateListener(appListener);
-    if (app.getFlutterDebugProcess() != null) {
-      appListener.notifyVmServiceAvailable(null);
-    }
-/*
-    AsyncUtils.invokeLater(() -> {
-      for (EditorEx editor : getActiveDartEditors()) {
-        WidgetIndentsHighlightingPass.onAppChanged(editor, app);
-      }
-    });
-
- */
-  }
-
-  EditorEx getIfValidForProject(Editor editor) {
-    if (editor.getProject() != project) return null;
-    if (editor.isDisposed() || project.isDisposed()) return null;
-    if (!(editor instanceof EditorEx)) return null;
-    return (EditorEx)editor;
   }
 
   /**
@@ -393,18 +207,16 @@ public class WidgetIndentsHighlightingPassFactory implements TextEditorHighlight
     // on the document length.
     final boolean convertOffsets = documentLength != outlineLength;
 
-// XXX    FlutterWidgetPerfManager perfManager = FlutterWidgetPerfManager.getInstance(project);
-    WidgetIndentsHighlightingPass.run(project, editor, outline, flutterDartAnalysisService, inspectorService, convertOffsets);
-  }
-
-  private void onSelectionChanged(DiagnosticsNode selection) {
-    this.selection = selection;
-    AsyncUtils.invokeLater(() -> {
-      for (EditorEx editor : editorOutlineService.getActiveDartEditors()) {
-        WidgetIndentsHighlightingPass.onSelectionChanged(editor, selection);
-      }
-    });
-    requestRepaint(false);
+    WidgetIndentsHighlightingPass.run(
+      project,
+      editor,
+      outline,
+      flutterDartAnalysisService,
+      inspectorStateService,
+      editorEventService,
+      editorPositionService,
+      convertOffsets
+    );
   }
 
   @Override
@@ -414,7 +226,7 @@ public class WidgetIndentsHighlightingPassFactory implements TextEditorHighlight
   }
 
   // Listener that asks for another pass when the Flutter settings for indent highlighting change.
-  private class Listener implements FlutterSettings.Listener {
+  private class SettingsListener implements FlutterSettings.Listener {
     @Override
     public void settingsChanged() {
       if (project.isDisposed()) {
