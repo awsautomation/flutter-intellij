@@ -62,5 +62,6 @@
     <orderEntry type="module" module-name="intellij.android.projectSystem.gradle.psd" />
     <orderEntry type="module" module-name="intellij.android.deploy" />
     <orderEntry type="module" module-name="assistant" />
+    <orderEntry type="module" module-name="intellij.android.wizardTemplate.plugin" />
   </component>
 </module>
