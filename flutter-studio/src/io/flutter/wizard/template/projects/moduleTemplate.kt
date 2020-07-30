@@ -5,7 +5,7 @@
  */
 package io.flutter.wizard.template.projects
 
-import com.android.tools.idea.wizard.template.template
+import io.flutter.npw.template.template
 
 val moduleTemplate get() = template {
 }

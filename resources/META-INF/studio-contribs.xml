@@ -35,9 +35,15 @@
   <actions>
 
     <!-- Define the 'New Flutter Project' menu item -->
+    <action id="flutter.NewFlutterProject" class="io.flutter.actions.NewFlutterProjectAction"
+            text="New Flutter Project..."
+            description="Create a new Flutter project">
+      <add-to-group group-id="JavaNewProjectOrModuleGroup" anchor="after" relative-to-action="NewProject"/>
+    </action>
     <action id="flutter.NewProject" class="io.flutter.actions.FlutterNewProjectAction"
             text="New Flutter Project..."
             description="Create a new Flutter project">
+      <!-- TODO Remove this one -->
       <add-to-group group-id="JavaNewProjectOrModuleGroup" anchor="after" relative-to-action="NewProject"/>
     </action>
 

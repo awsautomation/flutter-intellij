@@ -25,6 +25,7 @@ import java.util.NoSuchElementException;
 import javax.swing.Icon;
 import org.jetbrains.annotations.NotNull;
 
+// TODO Remove this one
 public class FlutterNewProjectAction extends AnAction implements DumbAware {
   private static final Logger LOG = Logger.getInstance(FlutterNewProjectAction.class);
 
