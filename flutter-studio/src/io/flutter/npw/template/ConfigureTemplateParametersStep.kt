@@ -29,8 +29,8 @@ import com.android.tools.idea.observable.ui.IconProperty
 import com.android.tools.idea.observable.ui.VisibleProperty
 import com.android.tools.idea.templates.uniquenessSatisfied
 import com.android.tools.idea.templates.validate
-import com.android.tools.idea.ui.wizard.StudioWizardStepPanel
 import com.android.tools.idea.ui.wizard.WizardUtils
+import com.android.tools.idea.ui.wizard.WizardUtils.wrapWithVScroll
 import com.android.tools.idea.wizard.model.ModelWizardStep
 import com.android.tools.idea.wizard.template.CheckBoxWidget
 import com.android.tools.idea.wizard.template.Constraint
@@ -110,7 +110,7 @@ class ConfigureTemplateParametersStep(model: RenderTemplateModel, title: String,
                         anySize))
   }
 
-  private val validatorPanel: ValidatorPanel = ValidatorPanel(this, StudioWizardStepPanel.wrappedWithVScroll(rootPanel))
+  private val validatorPanel: ValidatorPanel = ValidatorPanel(this, wrapWithVScroll(rootPanel))
   private var evaluationState = EvaluationState.NOT_EVALUATING
   private val parameters: Collection<Parameter<*>> get() = model.newTemplate.parameters
 
@@ -120,7 +120,7 @@ class ConfigureTemplateParametersStep(model: RenderTemplateModel, title: String,
   private val thumbnailPath: String
     get() = model.newTemplate.thumb().path().path
 
-  private val project: Project? get() = if (model.isNewProject) null else model.project
+  private val project: Project? get() = if (model.isNewProject) null else model.project.value
 
   /**
    * Given a parameter, return a String key we can use to interact with IntelliJ's [RecentsManager] system.

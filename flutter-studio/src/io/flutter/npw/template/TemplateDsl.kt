@@ -6,7 +6,6 @@
 package io.flutter.npw.template
 
 import com.android.tools.idea.wizard.template.Parameter
-import com.android.tools.idea.wizard.template.TemplateConstraint
 import com.android.tools.idea.wizard.template.Thumb
 import com.android.tools.idea.wizard.template.Widget
 import com.android.tools.idea.wizard.template.findResource
