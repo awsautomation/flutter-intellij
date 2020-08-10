@@ -7,6 +7,7 @@ package io.flutter.npw.project
 
 import com.android.tools.adtui.ASGallery
 import com.android.tools.adtui.util.FormScalingUtil
+import com.android.tools.idea.npw.project.ChooseAndroidProjectStep
 import com.android.tools.idea.npw.template.getDefaultSelectedTemplateIndex
 import com.android.tools.idea.npw.ui.WizardGallery
 import com.android.tools.idea.observable.core.BoolValueProperty
@@ -33,9 +34,12 @@ import io.flutter.npw.template.getTemplateTitle
 import io.flutter.wizard.template.FlutterWizardTemplateProvider
 import java.awt.BorderLayout
 import java.awt.Dimension
+import java.awt.event.ActionEvent
+import javax.swing.AbstractAction
 import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JPanel
+import javax.swing.event.ListSelectionListener
 
 // See com.android.tools.idea.npw.project.ChooseAndroidProjectStep
 class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<NewFlutterProjectModel>(
@@ -45,6 +49,7 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
   private val contentPanel = JPanel()
   private val rootPanel = JPanel(GridLayoutManager(1, 1))
   private val canGoForward = BoolValueProperty()
+  lateinit var gallery: ASGallery<TemplateRendererWithDescription>
   //private var newProjectModuleModel: NewProjectModuleModel
 
   init {
@@ -90,10 +95,39 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
   private fun updateUi(wizard: ModelWizard.Facade) {
     ApplicationManager.getApplication().assertIsDispatchThread()
 
-    contentPanel.add(ChooseFlutterProjectPanelUi(createGallery(title)).panel)
+    gallery = createGallery(title)
+    val projectPanel = ChooseFlutterProjectPanelUi(gallery)
+    contentPanel.add(projectPanel.panel)
+    gallery.setDefaultAction(object : AbstractAction() {
+      override fun actionPerformed(actionEvent: ActionEvent?) {
+        wizard.goForward()
+      }
+    })
+    val activitySelectedListener = ListSelectionListener {
+      gallery.selectedElement?.let { renderer ->
+        projectPanel.nameLabel.text = renderer.label
+        projectPanel.descriptionLabel.text = "<html>" + renderer.description + "</html>"
+        projectPanel.documentationLink.isVisible = renderer.documentationUrl != null
+        projectPanel.documentationLink.setHyperlinkTarget(renderer.documentationUrl)
+        canGoForward.set(true)
+      } ?: canGoForward.set(false)
+    }
+    gallery.addListSelectionListener(activitySelectedListener)
+    activitySelectedListener.valueChanged(null)
 
     FormScalingUtil.scaleComponentTree(this.javaClass, rootPanel)
     loadingPanel.stopLoading()
+  }
+
+  override fun onProceeding() {
+    val selectedTemplate = gallery.selectedElement
+    with(model) {
+      when (selectedTemplate) {
+        is NewTemplateRendererWithDescription -> {
+
+        }
+      }
+    }
   }
 
   override fun canGoForward(): ObservableBool = canGoForward
