@@ -6,9 +6,7 @@
 package io.flutter.npw.project
 
 import com.android.tools.adtui.ASGallery
-import com.android.tools.adtui.stdui.CommonTabbedPane
 import com.android.tools.adtui.util.FormScalingUtil
-import com.android.tools.idea.npw.project.ChooseAndroidProjectStep
 import com.android.tools.idea.npw.template.getDefaultSelectedTemplateIndex
 import com.android.tools.idea.npw.ui.WizardGallery
 import com.android.tools.idea.observable.core.BoolValueProperty
@@ -44,13 +42,13 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
   model, FlutterBundle.message("studio.npw.select.template")
 ) {
   private var loadingPanel = JBLoadingPanel(BorderLayout(), this)
-  private val tabsPanel = CommonTabbedPane()
+  private val contentPanel = JPanel()
   private val rootPanel = JPanel(GridLayoutManager(1, 1))
   private val canGoForward = BoolValueProperty()
   //private var newProjectModuleModel: NewProjectModuleModel
 
   init {
-    loadingPanel.add(tabsPanel)
+    loadingPanel.add(contentPanel)
 
     val d = Dimension(-1, -1)
     val sp = GridConstraints.SIZEPOLICY_CAN_GROW or GridConstraints.SIZEPOLICY_CAN_SHRINK
@@ -92,6 +90,8 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
   private fun updateUi(wizard: ModelWizard.Facade) {
     ApplicationManager.getApplication().assertIsDispatchThread()
 
+    contentPanel.add(ChooseFlutterProjectPanelUi(createGallery(title)).panel)
+
     FormScalingUtil.scaleComponentTree(this.javaClass, rootPanel)
     loadingPanel.stopLoading()
   }
@@ -100,7 +100,7 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
 
   override fun getComponent(): JComponent = rootPanel
 
-  override fun getPreferredFocusComponent(): JComponent = tabsPanel
+  override fun getPreferredFocusComponent(): JComponent = contentPanel
 
   interface TemplateRendererWithDescription : com.android.tools.idea.npw.template.ChooseGalleryItemStep.TemplateRenderer {
     val description: String
@@ -120,12 +120,12 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
   companion object {
     private fun getProjectTemplates() = FlutterWizardTemplateProvider().getTemplates()
 
-    private fun createGallery(title: String): ASGallery<ChooseAndroidProjectStep.TemplateRendererWithDescription> {
+    private fun createGallery(title: String): ASGallery<TemplateRendererWithDescription> {
       val listItems = sequence {
         getProjectTemplates().forEach { yield(NewTemplateRendererWithDescription(it)) }
       }.toList()
 
-      return WizardGallery<ChooseAndroidProjectStep.TemplateRendererWithDescription>(title, { it!!.icon }, { it!!.label }).apply {
+      return WizardGallery<TemplateRendererWithDescription>(title, { it!!.icon }, { it!!.label }).apply {
         model = JBList.createDefaultListModel(listItems)
         selectedIndex = getDefaultSelectedTemplateIndex(listItems)
       }

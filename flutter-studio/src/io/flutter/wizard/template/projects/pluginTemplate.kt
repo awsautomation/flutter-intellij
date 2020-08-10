@@ -16,6 +16,7 @@ import com.android.tools.idea.wizard.template.booleanParameter
 import com.android.tools.idea.wizard.template.camelCaseToUnderlines
 import com.android.tools.idea.wizard.template.extractClassName
 import com.android.tools.idea.wizard.template.stringParameter
+import icons.FlutterIcons
 import io.flutter.npw.template.ModuleTemplateData
 import io.flutter.npw.template.TemplateData
 import io.flutter.npw.template.template
@@ -26,6 +27,7 @@ val pluginTemplate
   get() = template {
     name = "Flutter Plugin"
     description = "Creates a new Flutter plugin with an example app"
+    icon = FlutterIcons.Flutter
 
     lateinit var projectName: StringParameter
     val baseClassName: StringParameter = stringParameter {

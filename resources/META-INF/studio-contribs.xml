@@ -8,10 +8,6 @@
     <moduleDescriptionProvider implementation="io.flutter.module.FlutterDescriptionProvider"/>
   </extensions>
 
-  <extensions defaultExtensionNs="com.android.tools.idea.wizard.template">
-    <wizardTemplateProvider implementation="io.flutter.wizard.template.FlutterWizardTemplateProvider" />
-  </extensions>
-
   <extensions defaultExtensionNs="com.android.project">
     <projectsystem implementation="io.flutter.project.FlutterProjectSystemProvider"/>
   </extensions>

@@ -11,7 +11,6 @@ import com.android.tools.adtui.validation.ValidatorPanel;
 import com.android.tools.idea.observable.BindingsManager;
 import com.android.tools.idea.observable.core.ObservableBool;
 import com.android.tools.idea.observable.ui.TextProperty;
-import com.android.tools.idea.ui.wizard.deprecated.StudioWizardStepPanel;
 import com.android.tools.idea.ui.wizard.WizardUtils;
 import com.android.tools.idea.wizard.model.SkippableWizardStep;
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
@@ -20,9 +19,11 @@ import com.intellij.openapi.ui.TextFieldWithBrowseButton;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.ui.components.JBLabel;
 import io.flutter.FlutterBundle;
 import io.flutter.project.FlutterProjectModel;
 import io.flutter.pub.PubRoot;
+import java.awt.BorderLayout;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -31,7 +32,7 @@ import java.io.File;
 
 // Import an existing Flutter module into an Android app.
 public class ImportFlutterModuleStep extends SkippableWizardStep<FlutterProjectModel> {
-  private static String DIRECTORY_NOUN = SystemInfo.isMac ? "folder" : "directory";
+  private final static String DIRECTORY_NOUN = SystemInfo.isMac ? "folder" : "directory";
   private final ValidatorPanel myValidatorPanel;
   private final BindingsManager myBindings = new BindingsManager();
   private final StudioWizardStepPanel myRootPanel;
@@ -103,4 +104,24 @@ public class ImportFlutterModuleStep extends SkippableWizardStep<FlutterProjectM
     // TODO(messick): Check for equivalent Android releases in both module and project.
     return Validator.Result.OK;
   }
+
+  static class StudioWizardStepPanel extends JPanel {
+
+    private JPanel myRootPanel;
+    private JBLabel myDescriptionLabel;
+
+    StudioWizardStepPanel(@NotNull JPanel innerPanel) {
+      this(innerPanel, null);
+    }
+
+    StudioWizardStepPanel(@NotNull JPanel innerPanel, @Nullable String description) {
+      super(new BorderLayout());
+
+      myDescriptionLabel.setText(description != null ? description : "");
+
+      myRootPanel.add(innerPanel);
+      add(myRootPanel);
+    }
+  }
+
 }
