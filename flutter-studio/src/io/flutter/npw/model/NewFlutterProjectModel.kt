@@ -9,7 +9,6 @@ import com.android.tools.idea.gradle.project.AndroidNewProjectInitializationStar
 import com.android.tools.idea.gradle.project.importing.GradleProjectImporter
 import com.android.tools.idea.npw.model.MultiTemplateRenderer
 import com.android.tools.idea.npw.model.NewProjectModel
-import com.android.tools.idea.npw.project.DomainToPackageExpression
 import com.android.tools.idea.observable.core.BoolProperty
 import com.android.tools.idea.observable.core.BoolValueProperty
 import com.android.tools.idea.observable.core.OptionalValueProperty
@@ -17,12 +16,11 @@ import com.android.tools.idea.observable.core.StringProperty
 import com.android.tools.idea.observable.core.StringValueProperty
 import com.android.tools.idea.wizard.model.WizardModel
 import com.intellij.ide.impl.OpenProjectTask
-import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.impl.NonProjectFileWritingAccessProvider
 import com.intellij.openapi.project.Project
-import com.intellij.platform.PlatformProjectOpenProcessor
+import com.intellij.openapi.project.ex.ProjectManagerEx
 import io.flutter.FlutterBundle
 import io.flutter.npw.template.ProjectTemplateDataBuilder
 import java.io.File
@@ -47,7 +45,7 @@ interface FlutterProjectData {
 
 // See com.android.tools.idea.npw.model.NewProjectModel
 class NewFlutterProjectModel : WizardModel(), FlutterProjectData {
-  override val projectName = StringValueProperty(FlutterBundle.message("module.wizard.app_name"))
+  override val projectName = StringValueProperty()//FlutterBundle.message("module.wizard.app_name"))
   override val packageName = StringValueProperty()
   override val projectLocation = StringValueProperty()
   override val sdkPath = StringValueProperty()
@@ -74,10 +72,10 @@ class NewFlutterProjectModel : WizardModel(), FlutterProjectData {
 
     val openProjectTask = OpenProjectTask(
       project = project.value,
-                isNewProject = false,  // We have already created a new project.
-                forceOpenInNewFrame = true
+      isNewProject = false,  // We have already created a new project.
+      forceOpenInNewFrame = true
     )
-    PlatformProjectOpenProcessor.openExistingProject(projectBaseDirectory.toPath(), projectBaseDirectory.toPath(), openProjectTask)
+    ProjectManagerEx.getInstanceEx().openProject(projectBaseDirectory.toPath(), openProjectTask)
   }
   override val projectTemplateDataBuilder = ProjectTemplateDataBuilder(true)
 

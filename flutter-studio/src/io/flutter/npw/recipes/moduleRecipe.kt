@@ -6,8 +6,20 @@
 package io.flutter.npw.recipes
 
 import com.android.tools.idea.wizard.template.RecipeExecutor
+import io.flutter.module.FlutterProjectType
 import io.flutter.npw.template.ModuleTemplateData
 
-fun RecipeExecutor.createFlutterModule(data: ModuleTemplateData, projectName: String) {
+fun RecipeExecutor.createFlutterModule(
+  moduleTemplateData: ModuleTemplateData,
+  projectName: String,
+  sdk: String,
+  projectLocation: String,
+  packageName: String,
+  isOffline: Boolean,
+  useKotlin: Boolean,
+  useSwift: Boolean,
+  useAndroidX: Boolean,
+  type: FlutterProjectType) {
+
 
 }

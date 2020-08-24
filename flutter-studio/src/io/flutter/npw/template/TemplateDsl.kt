@@ -5,9 +5,8 @@
  */
 package io.flutter.npw.template
 
-import com.android.tools.idea.wizard.template.Parameter
 import com.android.tools.idea.wizard.template.Thumb
-import com.android.tools.idea.wizard.template.Widget
+import com.android.tools.idea.wizard.template.WizardUiContext
 import com.android.tools.idea.wizard.template.findResource
 import java.io.File
 import javax.swing.Icon
@@ -21,6 +20,7 @@ internal data class TemplateImpl(
   override val widgets: Collection<Widget<*>>,
   private val _thumb: () -> Thumb,
   override val recipe: Recipe,
+  override val uiContexts: Collection<WizardUiContext>,
   override val constraints: Collection<TemplateConstraint>
 ) : Template {
   override fun thumb(): Thumb = _thumb()
@@ -40,6 +40,7 @@ class TemplateBuilder {
   var thumb: () -> Thumb = { Thumb.NoThumb }
   var recipe: Recipe? = null
   var widgets = listOf<Widget<*>>()
+  var uiContexts = listOf<WizardUiContext>()
   var constraints = listOf<TemplateConstraint>()
 
   fun widgets(vararg widgets: Widget<*>) {
@@ -50,8 +51,8 @@ class TemplateBuilder {
   class ThumbBuilder
 
   /** A wrapper for collection of [Thumb]s with an optional [get]ter. Implementations usually use [Parameter.value] to choose [Thumb]. */
-  fun thumb(block: TemplateBuilder.ThumbBuilder.() -> File) {
-    thumb = { Thumb { findResource(this.javaClass, TemplateBuilder.ThumbBuilder().block()) } }
+  fun thumb(block: ThumbBuilder.() -> File) {
+    thumb = { Thumb { findResource(this.javaClass, ThumbBuilder().block()) } }
   }
 
   internal fun build(): Template {
@@ -68,6 +69,7 @@ class TemplateBuilder {
       widgets,
       thumb,
       recipe!!,
+      uiContexts,
       constraints
     )
   }

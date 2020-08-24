@@ -6,9 +6,9 @@
 package io.flutter.npw.model
 
 import com.android.tools.idea.wizard.model.WizardModel
-import com.android.tools.idea.wizard.template.WizardParameterData
 import com.intellij.openapi.module.Module
 import io.flutter.npw.template.Template
+import io.flutter.npw.template.WizardParameterData
 import java.io.File
 
 /**
@@ -21,9 +21,17 @@ class RenderTemplateModel private constructor(
   private val shouldOpenFiles: Boolean,
   val createdFiles: MutableList<File> = arrayListOf()
 ) : WizardModel(), FlutterProjectData by projectData {
-  var newTemplate: Template = Template.None
   var module: Module? = null
   lateinit var wizardParameterData: WizardParameterData
+  var newTemplate: Template = Template.None
+    set(value) {
+      field = value
+      wizardParameterData = WizardParameterData(
+        packageName.get(),
+        module == null,
+        value.parameters
+      )
+    }
 
   override fun handleFinished() {
     TODO("Not yet implemented")

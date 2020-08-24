@@ -6,19 +6,19 @@
 package io.flutter.wizard.template
 
 import io.flutter.npw.template.Template
-import io.flutter.wizard.template.projects.appTemplate
-import io.flutter.wizard.template.projects.moduleTemplate
-import io.flutter.wizard.template.projects.packageTemplate
-import io.flutter.wizard.template.projects.pluginTemplate
+import io.flutter.wizard.template.projects.flutterProjectApp
+import io.flutter.wizard.template.projects.flutterProjectModule
+import io.flutter.wizard.template.projects.flutterProjectPackage
+import io.flutter.wizard.template.projects.flutterProjectPlugin
 
 /**
- * Implementation of the Android Wizard Template plugin extension point.
+ * This would be the implementation of the Android Wizard Template plugin extension point, if it were re-usable.
  */
 class FlutterWizardTemplateProvider {
   fun getTemplates(): List<Template> = listOf(
-    //appTemplate,
-    //moduleTemplate,
-    //packageTemplate,
-    pluginTemplate
+    flutterProjectApp(),
+    flutterProjectModule(),
+    flutterProjectPackage(),
+    flutterProjectPlugin()
   )
 }

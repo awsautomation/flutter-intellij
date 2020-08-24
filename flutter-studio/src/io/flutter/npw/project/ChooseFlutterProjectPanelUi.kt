@@ -9,7 +9,12 @@ import com.android.tools.adtui.ASGallery
 import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.layout.panel
 import com.intellij.ui.components.*
+import com.intellij.ui.layout.CellBuilder
+import com.intellij.ui.layout.GrowPolicy
+import com.intellij.ui.layout.noGrowY
+import com.intellij.uiDesigner.core.Spacer
 import javax.swing.JLabel
+import javax.swing.JScrollPane
 
 class ChooseFlutterProjectPanelUi<T>(val gallery: ASGallery<T>) {
   lateinit var documentationLink: HyperlinkLabel
@@ -22,19 +27,24 @@ class ChooseFlutterProjectPanelUi<T>(val gallery: ASGallery<T>) {
 
   lateinit var nameLabel: JLabel
   lateinit var descriptionLabel: JLabel
+  lateinit var scrollPanel: CellBuilder<JScrollPane>
 
   val panel = panel {
     row {
       cell(isFullWidth = true) {
-        component(gallery)
+        scrollPane(gallery).also { scrollPanel = it }
+        scrollPanel.noGrowY()
       }
     }
     row {
-      Label(templateName).also { nameLabel = it }
+      Spacer()()
     }
     row {
-      Label(templateDescription).also { descriptionLabel = it }
-      HyperlinkLabel("See documentation").also { documentationLink = it }
+      component(Label(templateName).also { nameLabel = it })
+    }
+    row {
+      component(Label(templateDescription).also { descriptionLabel = it })
+      component(HyperlinkLabel("See documentation").also { documentationLink = it })
     }
   }
 }

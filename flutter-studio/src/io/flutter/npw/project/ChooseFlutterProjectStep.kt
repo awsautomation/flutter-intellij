@@ -7,13 +7,13 @@ package io.flutter.npw.project
 
 import com.android.tools.adtui.ASGallery
 import com.android.tools.adtui.util.FormScalingUtil
-import com.android.tools.idea.npw.project.ChooseAndroidProjectStep
 import com.android.tools.idea.npw.template.getDefaultSelectedTemplateIndex
 import com.android.tools.idea.npw.ui.WizardGallery
 import com.android.tools.idea.observable.core.BoolValueProperty
 import com.android.tools.idea.observable.core.ObservableBool
 import com.android.tools.idea.wizard.model.ModelWizard
 import com.android.tools.idea.wizard.model.ModelWizardStep
+import com.android.tools.idea.wizard.template.WizardUiContext
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.progress.util.BackgroundTaskUtil
@@ -22,7 +22,6 @@ import com.intellij.ui.GuiUtils
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBLoadingPanel
 import com.intellij.uiDesigner.core.GridConstraints
-import com.intellij.uiDesigner.core.GridLayoutManager
 import io.flutter.FlutterBundle
 import io.flutter.npw.model.NewFlutterProjectModel
 import io.flutter.npw.model.RenderTemplateModel
@@ -34,10 +33,12 @@ import io.flutter.npw.template.getTemplateTitle
 import io.flutter.wizard.template.FlutterWizardTemplateProvider
 import java.awt.BorderLayout
 import java.awt.Dimension
+import java.awt.Insets
 import java.awt.event.ActionEvent
 import javax.swing.AbstractAction
 import javax.swing.Icon
 import javax.swing.JComponent
+import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.event.ListSelectionListener
 
@@ -47,10 +48,10 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
 ) {
   private var loadingPanel = JBLoadingPanel(BorderLayout(), this)
   private val contentPanel = JPanel()
-  private val rootPanel = JPanel(GridLayoutManager(1, 1))
+  private val rootPanel = JPanel()//GridLayoutManager(1, 1))
   private val canGoForward = BoolValueProperty()
   lateinit var gallery: ASGallery<TemplateRendererWithDescription>
-  //private var newProjectModuleModel: NewProjectModuleModel
+  lateinit var renderModel: RenderTemplateModel
 
   init {
     loadingPanel.add(contentPanel)
@@ -58,11 +59,11 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
     val d = Dimension(-1, -1)
     val sp = GridConstraints.SIZEPOLICY_CAN_GROW or GridConstraints.SIZEPOLICY_CAN_SHRINK
     val gc = GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, sp, sp, d, d, d, 0, false)
-    rootPanel.add(loadingPanel, gc)
+    rootPanel.add(loadingPanel)//, gc)
   }
 
   override fun createDependentSteps(): Collection<ModelWizardStep<*>> {
-    val renderModel = RenderTemplateModel.fromProjectModel(model)
+    renderModel = RenderTemplateModel.fromProjectModel(model)
     return listOf(ConfigureTemplateParametersStep(renderModel, FlutterBundle.message("studio.project.config.title"), listOf()))
   }
 
@@ -96,7 +97,9 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
     ApplicationManager.getApplication().assertIsDispatchThread()
 
     gallery = createGallery(title)
+    gallery.layoutOrientation = JList.VERTICAL_WRAP
     val projectPanel = ChooseFlutterProjectPanelUi(gallery)
+
     contentPanel.add(projectPanel.panel)
     gallery.setDefaultAction(object : AbstractAction() {
       override fun actionPerformed(actionEvent: ActionEvent?) {
@@ -121,10 +124,10 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
 
   override fun onProceeding() {
     val selectedTemplate = gallery.selectedElement
-    with(model) {
+    with(renderModel) {
       when (selectedTemplate) {
         is NewTemplateRendererWithDescription -> {
-
+          renderModel.newTemplate = selectedTemplate.template
         }
       }
     }
@@ -153,6 +156,7 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
 
   companion object {
     private fun getProjectTemplates() = FlutterWizardTemplateProvider().getTemplates()
+      .filter { WizardUiContext.NewProject in it.uiContexts }
 
     private fun createGallery(title: String): ASGallery<TemplateRendererWithDescription> {
       val listItems = sequence {
@@ -162,6 +166,7 @@ class ChooseFlutterProjectStep(model: NewFlutterProjectModel) : ModelWizardStep<
       return WizardGallery<TemplateRendererWithDescription>(title, { it!!.icon }, { it!!.label }).apply {
         model = JBList.createDefaultListModel(listItems)
         selectedIndex = getDefaultSelectedTemplateIndex(listItems)
+        setCellMargin(Insets(1, 1, 1, 1))
       }
     }
 

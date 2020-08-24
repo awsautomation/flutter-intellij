@@ -9,42 +9,26 @@ import com.android.tools.adtui.TabularLayout
 import com.android.tools.adtui.validation.ValidatorPanel
 import com.android.tools.idea.npw.bindExpression
 import com.android.tools.idea.npw.invokeLater
-import com.android.tools.idea.npw.template.components.CheckboxProvider
+import com.android.tools.idea.npw.model.NewProjectModel.Companion.getSuggestedProjectPackage
+import com.android.tools.idea.npw.model.NewProjectModel.Companion.nameToJavaPackage
 import com.android.tools.idea.npw.template.components.ComponentProvider
-import com.android.tools.idea.npw.template.components.EnumComboProvider
-import com.android.tools.idea.npw.template.components.LabelFieldProvider
-import com.android.tools.idea.npw.template.components.LabelWithEditButtonProvider
-import com.android.tools.idea.npw.template.components.PackageComboProvider
-import com.android.tools.idea.npw.template.components.SeparatorProvider
-import com.android.tools.idea.npw.template.components.TextFieldProvider
-import com.android.tools.idea.npw.template.components.UrlLinkProvider
-import com.android.tools.idea.npw.template.isRelated
 import com.android.tools.idea.observable.AbstractProperty
 import com.android.tools.idea.observable.BindingsManager
 import com.android.tools.idea.observable.ListenerManager
+import com.android.tools.idea.observable.Receiver
+import com.android.tools.idea.observable.core.BoolProperty
+import com.android.tools.idea.observable.core.BoolValueProperty
 import com.android.tools.idea.observable.core.ObservableBool
 import com.android.tools.idea.observable.core.StringProperty
 import com.android.tools.idea.observable.core.StringValueProperty
+import com.android.tools.idea.observable.expressions.Expression
 import com.android.tools.idea.observable.ui.IconProperty
+import com.android.tools.idea.observable.ui.TextProperty
 import com.android.tools.idea.observable.ui.VisibleProperty
-import com.android.tools.idea.templates.uniquenessSatisfied
-import com.android.tools.idea.templates.validate
 import com.android.tools.idea.ui.wizard.WizardUtils
 import com.android.tools.idea.ui.wizard.WizardUtils.wrapWithVScroll
 import com.android.tools.idea.wizard.model.ModelWizardStep
-import com.android.tools.idea.wizard.template.CheckBoxWidget
-import com.android.tools.idea.wizard.template.Constraint
-import com.android.tools.idea.wizard.template.EnumParameter
-import com.android.tools.idea.wizard.template.EnumWidget
-import com.android.tools.idea.wizard.template.LabelWidget
-import com.android.tools.idea.wizard.template.PackageNameWidget
-import com.android.tools.idea.wizard.template.Parameter
-import com.android.tools.idea.wizard.template.ParameterWidget
-import com.android.tools.idea.wizard.template.Separator
-import com.android.tools.idea.wizard.template.StringParameter
-import com.android.tools.idea.wizard.template.TextFieldWidget
-import com.android.tools.idea.wizard.template.UrlLinkWidget
-import com.android.tools.idea.wizard.template.Widget
+import com.android.tools.idea.wizard.template.WizardUiContext
 import com.google.common.base.Joiner
 import com.google.common.cache.CacheBuilder
 import com.google.common.io.Files
@@ -55,17 +39,36 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.uiDesigner.core.GridConstraints
 import com.intellij.uiDesigner.core.GridLayoutManager
+import io.flutter.FlutterBundle
 import io.flutter.npw.model.RenderTemplateModel
+import io.flutter.npw.template.components.CheckboxProvider
+import io.flutter.npw.template.components.LabelFieldProvider
+import io.flutter.npw.template.components.LabelWithEditButtonProvider
+import io.flutter.npw.template.components.PackageComboProvider
+import io.flutter.npw.template.components.SeparatorProvider
+import io.flutter.npw.template.components.TextFieldProvider
 import org.jetbrains.kotlin.utils.addToStdlib.firstNotNullResult
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
+import java.util.EnumSet
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.SwingConstants
+
+val TYPE_CONSTRAINTS: EnumSet<Constraint> = EnumSet.of(
+  Constraint.CLASS,
+  Constraint.PACKAGE,
+  Constraint.MODULE,
+  Constraint.STRING
+)
+
+fun Parameter<*>.isRelated(p: Parameter<*>): Boolean =
+  p is StringParameter && this is StringParameter && p !== this &&
+  TYPE_CONSTRAINTS.intersect(constraints).intersect(p.constraints).isNotEmpty()
 
 // See com.android.tools.idea.npw.template.ConfigureTemplateParametersStep
 class ConfigureTemplateParametersStep(model: RenderTemplateModel, title: String, private val templates: List<NamedModuleTemplate>)
@@ -100,14 +103,16 @@ class ConfigureTemplateParametersStep(model: RenderTemplateModel, title: String,
     val anySize = Dimension(-1, -1)
     val defaultSizePolicy = GridConstraints.SIZEPOLICY_CAN_GROW or GridConstraints.SIZEPOLICY_CAN_SHRINK
     add(templateThumbLabel,
-        GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_NONE, 0, 0, anySize, anySize, anySize))
-    add(parametersPanel,
-        GridConstraints(0, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, defaultSizePolicy,
-                        defaultSizePolicy or GridConstraints.SIZEPOLICY_WANT_GROW,
-                        anySize, anySize, anySize))
+        GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_NONE,
+                        0, 0, anySize, anySize, anySize))
     add(templateDescriptionLabel,
         GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_NONE, defaultSizePolicy, 0, anySize, anySize,
                         anySize))
+    add(parametersPanel,
+        GridConstraints(0, 1, 2, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                        defaultSizePolicy,// or GridConstraints.SIZEPOLICY_WANT_GROW,
+                        defaultSizePolicy or GridConstraints.SIZEPOLICY_WANT_GROW,
+                        anySize, anySize, anySize))
   }
 
   private val validatorPanel: ValidatorPanel = ValidatorPanel(this, wrapWithVScroll(rootPanel))
@@ -173,8 +178,7 @@ class ConfigureTemplateParametersStep(model: RenderTemplateModel, title: String,
       parameterRows[parameter] = row
       when (widget) {
         // We cannot know a good default value for package in template, but it's being preset in [createRowForWidget]
-        is PackageNameWidget -> parameter.value = property!!.get()
-        is EnumWidget -> row.setValue((parameter.value as Enum<*>).name)
+        is PackageNameWidget -> row.setValue(parameter.value) //parameter.value = property!!.get()
         else -> row.setValue(parameter.value)
       }
     }
@@ -192,7 +196,36 @@ class ConfigureTemplateParametersStep(model: RenderTemplateModel, title: String,
       }
     }
 
+    val packageNameEntry = findPackageNameEntry()
+    if (packageNameEntry != null) {
+      val projectNameEntry = findProjectNameEntry()!!
+      val projectName = projectNameEntry.property as TextProperty
+      val basePackage = getSuggestedProjectPackage()
+
+      val computedPackageName: Expression<String> = projectName // was: model.projectName
+        .transform { appName: String? -> String.format("%s.%s", basePackage, nameToJavaPackage(appName!!)) }
+      val packageNameText = packageNameEntry.property as TextProperty
+      packageNameText.set(computedPackageName.get())
+      model.packageName.set(packageNameText.get())
+      val isPackageNameSynced: BoolProperty = BoolValueProperty(true)
+      bindings.bind(model.packageName, packageNameText)
+
+      bindings.bind(packageNameText, computedPackageName, isPackageNameSynced)
+      listeners.listen(packageNameText,
+                       Receiver { value: String -> isPackageNameSynced.set(value == computedPackageName.get()) })
+    }
+
     evaluateParameters()
+  }
+
+  private fun findPackageNameEntry(): RowEntry<*>? = findEntry("studio.npw.package.name")
+  private fun findProjectNameEntry(): RowEntry<*>? = findEntry("studio.npw.project.name")
+
+  private fun findEntry(bundleName: String): RowEntry<*>? {
+    if (model.newTemplate.uiContexts.contains(WizardUiContext.NewModule)) return null
+    val key = FlutterBundle.message(bundleName)
+    val parameter = parameterRows.keys.find { p -> p.name == key }
+    return parameterRows[parameter] as RowEntry<*>
   }
 
   /**
@@ -215,15 +248,16 @@ class ConfigureTemplateParametersStep(model: RenderTemplateModel, title: String,
 
       // All ATTR_PACKAGE_NAME providers should be string types and provide StringProperties
       val packageName = rowEntry.property as StringProperty
+      if (!packageName.isEmpty.get() && model.packageName.isEmpty.get()) model.packageName.set(packageName.get())
       bindings.bindTwoWay(packageName, model.packageName)
       // Model.packageName is used for parameter evaluation, but updated asynchronously. Do new evaluation when value changes.
       listeners.listen(model.packageName) { enqueueEvaluateParameters() }
       rowEntry
     }
     is CheckBoxWidget -> RowEntry(CheckboxProvider(widget.p))
-    is UrlLinkWidget -> RowEntry(UrlLinkProvider(widget.urlName, widget.urlAddress))
     is Separator -> RowEntry(SeparatorProvider())
-    is EnumWidget<*> -> RowEntry(widget.p.name, EnumComboProvider(widget.p))
+    is SdkSelectorWidget -> RowEntry(widget.p.name, TextFieldProvider(widget.parameter))
+    // TODO(messick) Create SdkSelectorWidget
     else -> error("Only string and bool parameters are supported for now")
   }
 
@@ -320,15 +354,8 @@ class ConfigureTemplateParametersStep(model: RenderTemplateModel, title: String,
   }
 
   private fun <T> Parameter<T>.setFromProperty(property: AbstractProperty<*>) {
-    when (this) {
-      is EnumParameter -> {
-        this.value = this.fromString(property.get() as String)!!
-      }
-      else -> {
-        @Suppress("UNCHECKED_CAST")
-        this.value = property.get() as T // TODO(qumeric): row may have no property? (e.g. separator)
-      }
-    }
+    @Suppress("UNCHECKED_CAST")
+    this.value = property.get() as T // TODO(qumeric): row may have no property? (e.g. separator)
   }
 
   /**
