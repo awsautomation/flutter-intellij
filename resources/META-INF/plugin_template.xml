@@ -298,6 +298,10 @@
     <codeInsight.lineMarkerProvider language="Dart" implementationClass="io.flutter.editor.FlutterIconLineMarkerProvider"/>
     <errorHandler implementation="io.flutter.FlutterErrorReportSubmitter"/>
 
+    <toolWindow id="Triagemagic" anchor="right" icon="FlutterIcons.State.RedProgr"
+                factoryClass="io.flutter.triagemagic.TriagemagicViewFactory" />
+    <projectService serviceImplementation="io.flutter.triagemagic.TriagemagicView" overrides="false"/>
+
     <toolWindow id="Flutter Outline" anchor="right" icon="FlutterIcons.Flutter_13"
                 factoryClass="io.flutter.preview.PreviewViewFactory"/>
     <projectService serviceImplementation="io.flutter.preview.PreviewView" overrides="false"/>

@@ -16,7 +16,7 @@ import com.intellij.openapi.wm.ToolWindowFactory
 class TriagemagicViewFactory : ToolWindowFactory, DumbAware {
 
   override fun init(toolWindow: ToolWindow) {
-    toolWindow.isAvailable = true
+    toolWindow.setAvailable(true, null)
   }
 
   override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
