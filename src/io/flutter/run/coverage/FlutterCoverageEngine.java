@@ -5,12 +5,9 @@
  */
 package io.flutter.run.coverage;
 
-import com.intellij.coverage.CoverageAnnotator;
-import com.intellij.coverage.CoverageEngine;
-import com.intellij.coverage.CoverageFileProvider;
-import com.intellij.coverage.CoverageRunner;
-import com.intellij.coverage.CoverageSuite;
-import com.intellij.coverage.CoverageSuitesBundle;
+import com.intellij.coverage.*;
+import com.intellij.coverage.view.CoverageViewExtension;
+import com.intellij.coverage.view.CoverageViewManager;
 import com.intellij.execution.configurations.RunConfigurationBase;
 import com.intellij.execution.configurations.RunProfile;
 import com.intellij.execution.configurations.WrappingRunConfiguration;
@@ -27,14 +24,13 @@ import io.flutter.FlutterBundle;
 import io.flutter.FlutterUtils;
 import io.flutter.pub.PubRoot;
 import io.flutter.run.test.TestConfig;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 public class FlutterCoverageEngine extends CoverageEngine {
 
@@ -53,29 +49,32 @@ public class FlutterCoverageEngine extends CoverageEngine {
   }
 
   @Override
-  public @NotNull CoverageEnabledConfiguration createCoverageEnabledConfiguration(@NotNull RunConfigurationBase conf) {
+  public @NotNull
+  CoverageEnabledConfiguration createCoverageEnabledConfiguration(@NotNull RunConfigurationBase conf) {
     return new FlutterCoverageEnabledConfiguration(conf);
   }
 
   @Override
-  public @Nullable CoverageSuite createCoverageSuite(@NotNull CoverageRunner covRunner,
-                                                     @NotNull String name,
-                                                     @NotNull CoverageFileProvider coverageDataFileProvider,
-                                                     @Nullable String[] filters,
-                                                     long lastCoverageTimeStamp,
-                                                     @Nullable String suiteToMerge,
-                                                     boolean coverageByTestEnabled,
-                                                     boolean tracingEnabled,
-                                                     boolean trackTestFolders,
-                                                     Project project) {
+  public @Nullable
+  CoverageSuite createCoverageSuite(@NotNull CoverageRunner covRunner,
+                                    @NotNull String name,
+                                    @NotNull CoverageFileProvider coverageDataFileProvider,
+                                    @Nullable String[] filters,
+                                    long lastCoverageTimeStamp,
+                                    @Nullable String suiteToMerge,
+                                    boolean coverageByTestEnabled,
+                                    boolean tracingEnabled,
+                                    boolean trackTestFolders,
+                                    Project project) {
     return null;
   }
 
   @Override
-  public @Nullable CoverageSuite createCoverageSuite(@NotNull CoverageRunner covRunner,
-                                                     @NotNull String name,
-                                                     @NotNull CoverageFileProvider coverageDataFileProvider,
-                                                     @NotNull CoverageEnabledConfiguration config) {
+  public @Nullable
+  CoverageSuite createCoverageSuite(@NotNull CoverageRunner covRunner,
+                                    @NotNull String name,
+                                    @NotNull CoverageFileProvider coverageDataFileProvider,
+                                    @NotNull CoverageEnabledConfiguration config) {
     if (config instanceof FlutterCoverageEnabledConfiguration) {
       return new FlutterCoverageSuite(covRunner, name, coverageDataFileProvider,
                                       config.getConfiguration().getProject(), this);
@@ -84,12 +83,21 @@ public class FlutterCoverageEngine extends CoverageEngine {
   }
 
   @Override
-  public @Nullable CoverageSuite createEmptyCoverageSuite(@NotNull CoverageRunner coverageRunner) {
+  public @Nullable
+  CoverageSuite createEmptyCoverageSuite(@NotNull CoverageRunner coverageRunner) {
     return new FlutterCoverageSuite(this);
   }
 
   @Override
-  public @NotNull CoverageAnnotator getCoverageAnnotator(Project project) {
+  public CoverageViewExtension createCoverageViewExtension(Project project,
+                                                           CoverageSuitesBundle suiteBundle,
+                                                           CoverageViewManager.StateBean stateBean) {
+    return new FlutterCoverageViewExtension((FlutterCoverageAnnotator)getCoverageAnnotator(project), project, suiteBundle, stateBean);
+  }
+
+  @Override
+  public @NotNull
+  CoverageAnnotator getCoverageAnnotator(Project project) {
     return FlutterCoverageAnnotator.getInstance(project);
   }
 
@@ -128,7 +136,8 @@ public class FlutterCoverageEngine extends CoverageEngine {
   }
 
   @Override
-  public @NotNull Set<String> getQualifiedNames(@NotNull PsiFile sourceFile) {
+  public @NotNull
+  Set<String> getQualifiedNames(@NotNull PsiFile sourceFile) {
     final Set<String> qualifiedNames = new HashSet<>();
     qualifiedNames.add(getQName(sourceFile));
     return qualifiedNames;
@@ -140,7 +149,8 @@ public class FlutterCoverageEngine extends CoverageEngine {
   }
 
   @Override
-  public @Nullable String getTestMethodName(@NotNull PsiElement element, @NotNull AbstractTestProxy testProxy) {
+  public @Nullable
+  String getTestMethodName(@NotNull PsiElement element, @NotNull AbstractTestProxy testProxy) {
     return null;
   }
 
@@ -154,7 +164,8 @@ public class FlutterCoverageEngine extends CoverageEngine {
     return sourceFile.getVirtualFile().getPath();
   }
 
-  static @NotNull RunProfile unwrapRunProfile(@NotNull RunProfile runProfile) {
+  static @NotNull
+  RunProfile unwrapRunProfile(@NotNull RunProfile runProfile) {
     if (runProfile instanceof WrappingRunConfiguration) {
       return ((WrappingRunConfiguration<?>)runProfile).getPeer();
     }
